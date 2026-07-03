@@ -5,6 +5,9 @@ import tempfile
 
 from services.factura_service import _procesar_archivo
 
+import threading
+
+LOCK_PROCESAMIENTO = threading.Lock()
 
 def api_procesar():
     """
@@ -24,7 +27,17 @@ def api_procesar():
         ruta_tmp = tmp.name
 
     try:
-        factura = _procesar_archivo(ruta_tmp, archivo.filename)
+
+        print(f"[COLA] Esperando turno: {archivo.filename}")
+
+        with LOCK_PROCESAMIENTO:
+
+            print(f"[COLA] Iniciando procesamiento: {archivo.filename}")
+
+            factura = _procesar_archivo(ruta_tmp, archivo.filename)
+
+            print(f"[COLA] Finalizo procesamiento: {archivo.filename}")
+        
         return jsonify({
             "ok": True,
             "datos": {

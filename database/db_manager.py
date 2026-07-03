@@ -17,7 +17,8 @@ def crear_tabla():
 
     asegurar_carpeta_db()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
 
         cursor = conn.cursor() #Escribe en la BD
 
@@ -48,7 +49,8 @@ def guardar_factura(nombre_archivo, tipo_pdf, texto_extraido, banco="", total=""
     """
     asegurar_carpeta_db()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
 
         #Los signos ? son marcadores de posicion para evitar inyecciones SQL. Los valores se pasan como tupla en el segundo argumento de execute().
@@ -68,7 +70,8 @@ def obtener_todas():
     Trae todas las facturas en la base de datos y retorna una lista de filas)
     """
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
 
         #row_factory hace que cada fila se pueda usar de diccionario
         #Asi puedes escribir fila["Banco"] en vez de fila [4]
@@ -84,7 +87,8 @@ def obtener_por_id(factura_id):
     Si no encuentra la factura, retorna None.
     """
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM facturas WHERE id = ?", (factura_id,))
