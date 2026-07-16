@@ -13,6 +13,16 @@ PDF_FOLDER = os.path.join(BASE_DIR, "pdfs")
 
 DB_PATH = os.path.join(BASE_DIR, "database", "facturas.db")
 
+#Motor de base de datos
+DB_ENGINE = "mysql"
+
+MYSQL_HOST = "localhost"
+MYSQL_PORT = 3306
+MYSQL_DATABASE = "lectura_ocr"
+MYSQL_USER= "root"
+MYSQL_PASSWORD = ""
+
+
 TESSERACT_PATH = r"C:\Users\cmarroquin\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
 
 POPPLER_PATH = r"C:\Users\cmarroquin\Downloads\Release-26.02.0-0\poppler-26.02.0\Library\bin"

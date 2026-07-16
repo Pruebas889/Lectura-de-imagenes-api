@@ -174,7 +174,7 @@ def _procesar_archivo(ruta: str, nombre: str) -> Factura:
     )
 
     guardar_factura(
-        factura.nombre_archivo, factura.tipo_pdf, factura.texto_extraido,
+        factura.nombre_archivo, factura.tipo_pdf,
         factura.banco, factura.total, factura.fecha, factura.proveedor
     )
     return factura

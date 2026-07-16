@@ -7,7 +7,7 @@ from config.settings import POPPLER_PATH
 
 from extractors.image_ocr import extraer_texto_imagen
 
-from database.db_manager import guardar_factura
+from database.sqlite_manager import guardar_factura
 
 from services.comparador_service import (
     elegir_cliente,
