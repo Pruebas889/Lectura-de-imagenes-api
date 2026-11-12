@@ -1,227 +1,173 @@
 import os
+import shutil
 import tempfile
+import uuid
 
 from pdf2image import convert_from_path
 
-from config.settings import POPPLER_PATH
+from config.settings import DOCUMENT_FOLDER, GROQ_API_KEY, POPPLER_PATH
 
 from extractors.image_ocr import extraer_texto_imagen
 
 from database.db_manager import guardar_factura
-
-from services.comparador_service import (
-    elegir_cliente,
-    elegir_nombre_cliente,
-    elegir_nit,
-    elegir_fecha,
-    elegir_total,
-    elegir_proveedor,
-    elegir_numero_factura
-)
-
 
 from extractors.pdf_text import extraer_texto_pdf
 from extractors.pdf_ocr import extraer_texto_ocr, es_pdf_escaneado
 from extractors.cleaner import limpiar_texto, extraer_patrones
 from extractors.regex_extractor import extraer_con_regex
 from extractors.ai_extractor import (
-    extraer_texto_con_ia,
+    GroqQuotaExceeded,
     extraer_con_ia_desde_imagen,
     es_imagen
 )
 
 from models.factura import Factura
 
-def _procesar_archivo(ruta: str, nombre: str) -> Factura:
-    from extractors.ai_extractor import es_imagen
-    from pdf2image import convert_from_path
-    from config.settings import POPPLER_PATH
-    import tempfile
 
+def _tiene_datos(datos: dict) -> bool:
+    campos = (
+        "proveedor",
+        "nit_proveedor",
+        "nit",
+        "total",
+        "estado_transaccion",
+        "fecha",
+        "hora",
+        "referencia",
+        "numero_autorizacion",
+        "punto_recaudo",
+        "banco"
+    )
+    return any(datos.get(campo) for campo in campos)
+
+
+def _completar_con_patrones(datos: dict, texto: str) -> dict:
+    respaldo = extraer_patrones(texto)
+    for campo in ("total", "fecha", "banco", "proveedor"):
+        if not datos.get(campo) and respaldo.get(campo):
+            datos[campo] = respaldo[campo]
+    return datos
+
+
+def _completar_con_vision(ruta: str, datos: dict) -> tuple[dict, bool]:
+    if _tiene_datos(datos) or not GROQ_API_KEY:
+        return datos, False
+
+    try:
+        datos_vision = extraer_con_ia_desde_imagen(ruta, datos)
+        return {**datos, **{k: v for k, v in datos_vision.items() if v}}, False
+    except GroqQuotaExceeded as error:
+        print(f"[Groq] {error} Se conserva el resultado local.")
+        return datos, True
+
+
+def _procesar_archivo(ruta: str, nombre: str) -> Factura:
     ext = os.path.splitext(nombre)[1].lower()
+    advertencia_cuota_groq = False
 
     if es_imagen(nombre):
-
         tipo = "imagen"
-
-        print("Imagen detectada → usando OCR + IA visión en paralelo...")
-
-        # CANAL 1: OCR
+        print("Imagen detectada -> Tesseract OCR y extracción local...")
         texto_crudo = extraer_texto_imagen(ruta)
         texto_limpio = limpiar_texto(texto_crudo)
-        texto_limpio = texto_limpio.upper()
-
-        print("\n========== TEXTO LIMPIO ==========")
-        print(texto_limpio)
-        print("=================================\n")
-
-        # REGEX
-        datos_regex = extraer_con_regex(texto_limpio)
-
-        print("\n========== REGEX ==========")
-        print(datos_regex)
-        print("===========================\n")
-
-        # IA TEXTO
-        # JSON generado por OCR + Regex
-        datos_ocr = datos_regex
-
-        print("OCR:")
-        print(datos_ocr)
-
-        # IA VISIÓN
-        datos_vision = extraer_con_ia_desde_imagen(ruta, datos_regex)
-
-        print("IA vision:")
-        print(datos_vision)
-
-        # CONSENSO
-        datos = _consenso(datos_ocr, datos_vision)
-
-        print("\n========== OCR ==========")
-        print(datos_ocr)
-
-        print("\n========== VISION ==========")
-        print(datos_vision)
-
-        print("\n========== RESULTADO FINAL ==========")
-        print(datos)
-
-        print("=====================================\n")
-
+        datos = extraer_con_regex(texto_limpio.upper())
+        datos = _completar_con_patrones(datos, texto_limpio)
+        datos, advertencia_cuota_groq = _completar_con_vision(ruta, datos)
     elif ext == ".pdf":
         if es_pdf_escaneado(ruta):
-
             tipo = "escaneado"
-            print("PDF escaneado → usando OCR + IA visión en paralelo...")
-
-            # --- CANAL 1: OCR con Tesseract ---
-            texto_crudo  = extraer_texto_ocr(ruta)
+            print("PDF escaneado -> Tesseract OCR y extracción local...")
+            texto_crudo = extraer_texto_ocr(ruta)
             texto_limpio = limpiar_texto(texto_crudo)
-            texto_limpio = texto_limpio.upper()
-
-            print("\n========== TEXTO LIMPIO ==========")
-            print(texto_limpio)
-            print("=================================\n")
-
-            #PRIMERA CAPA: REGEX
-            datos_regex = extraer_con_regex(texto_limpio)
-
-            print("\n========== REGEX ==========")
-            print(datos_regex)
-            print("===========================\n")
-
-            # JSON generado por OCR + Regex
-
-            datos_ocr = datos_regex
-
-            print("OCR:")
-            print(datos_ocr)
-
-            # --- CANAL 2: IA visión directo sobre la imagen ---
-            datos_vision = {}
-            try:
-                paginas = convert_from_path(ruta, dpi=200, poppler_path=POPPLER_PATH)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                    paginas[0].save(tmp_img.name, "PNG")
-                    ruta_img_tmp = tmp_img.name
-                datos_vision = extraer_con_ia_desde_imagen(ruta_img_tmp, datos_regex)
-                os.unlink(ruta_img_tmp)
-                print("IA vision:")
-                print(datos_vision)
-            except Exception as e:
-                print(f"  IA visión falló: {e}, usando solo OCR")
-
-            # --- CONSENSO: campo por campo, prioriza el que tenga valor ---
-            datos = _consenso(datos_ocr, datos_vision)
-            
-            print("\n========== OCR ==========")
-            print(datos_ocr)
-
-            print("\n========== VISION ==========")
-            print(datos_vision)
-
-            print("\n========== RESULTADO FINAL ==========")
-            print(datos)
-
-            print("=====================================\n")
-
+            datos = extraer_con_regex(texto_limpio.upper())
+            datos = _completar_con_patrones(datos, texto_limpio)
+            if not _tiene_datos(datos) and GROQ_API_KEY:
+                paginas = convert_from_path(
+                    ruta,
+                    dpi=150,
+                    first_page=1,
+                    last_page=1,
+                    poppler_path=POPPLER_PATH
+                )
+                try:
+                    if paginas:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+                            ruta_img_tmp = tmp_img.name
+                        try:
+                            paginas[0].save(ruta_img_tmp, "PNG")
+                            datos, advertencia_cuota_groq = _completar_con_vision(
+                                ruta_img_tmp,
+                                datos
+                            )
+                        finally:
+                            if os.path.exists(ruta_img_tmp):
+                                os.unlink(ruta_img_tmp)
+                finally:
+                    for pagina in paginas:
+                        pagina.close()
         else:
-            # PDF digital → solo texto (no necesita visión)
-            tipo         = "digital"
-            texto_crudo  = extraer_texto_ocr(ruta)
+            tipo = "digital"
+            texto_crudo = extraer_texto_pdf(ruta)
             texto_limpio = limpiar_texto(texto_crudo)
-            
-            print("\n========== PDF DIGITAL ==========")
-            print(datos)
-            print("================================\n")
-
-        # Respaldo final con regex si ambos canales fallaron
-        if not any(datos.values()):
-            print("  Ambos canales fallaron, usando regex como último respaldo...")
-            datos = extraer_patrones(texto_limpio)
+            datos = extraer_con_regex(texto_limpio.upper())
+            datos = _completar_con_patrones(datos, texto_limpio)
+            if not _tiene_datos(datos):
+                print("El texto del PDF no dio datos; se intenta OCR como respaldo...")
+                texto_ocr = extraer_texto_ocr(ruta)
+                texto_limpio = limpiar_texto(f"{texto_limpio}\n{texto_ocr}")
+                datos = extraer_con_regex(texto_limpio.upper())
+                datos = _completar_con_patrones(datos, texto_limpio)
     else:
-        raise ValueError(f"Formato no soportado: {ext}. Usa PDF, JPG o PNG.")
+        raise ValueError(
+            f"Formato no soportado: {ext or '(sin extensión)'}. "
+            "Usa PDF, JPG, PNG, WEBP, BMP o TIFF."
+        )
+
+    if not _tiene_datos(datos):
+        raise RuntimeError(
+            "No se pudieron extraer datos del documento. Verifica la calidad del archivo "
+            "y que Tesseract esté instalado y configurado."
+        )
 
     factura = Factura(
         nombre_archivo=nombre,
         tipo_pdf=tipo,
-        texto_extraido=texto_limpio if 'texto_limpio' in locals() else "[Imagen]",
+        texto_extraido=texto_limpio,
         banco=datos.get("banco", ""),
         total=datos.get("total", ""),
         fecha=datos.get("fecha", ""),
-        proveedor=datos.get("proveedor", "")
+        proveedor=datos.get("proveedor", ""),
+        advertencia_cuota_groq=advertencia_cuota_groq,
+        nit_proveedor=datos.get("nit_proveedor") or datos.get("nit", ""),
+        estado_transaccion=datos.get("estado_transaccion", ""),
+        hora=datos.get("hora", ""),
+        referencia=datos.get("referencia", ""),
+        numero_autorizacion=datos.get("numero_autorizacion", ""),
+        punto_recaudo=datos.get("punto_recaudo", "")
     )
 
-    guardar_factura(
-        factura.nombre_archivo, factura.tipo_pdf,
-        factura.banco, factura.total, factura.fecha, factura.proveedor
-    )
+    archivo_original = f"{uuid.uuid4().hex}{ext}"
+    os.makedirs(DOCUMENT_FOLDER, exist_ok=True)
+    ruta_original = os.path.join(DOCUMENT_FOLDER, archivo_original)
+    shutil.copyfile(ruta, ruta_original)
+    try:
+        factura.id = guardar_factura(
+            factura.nombre_archivo,
+            factura.tipo_pdf,
+            factura.texto_extraido,
+            factura.banco,
+            factura.total,
+            factura.fecha,
+            factura.proveedor,
+            archivo_original,
+            factura.nit_proveedor,
+            factura.estado_transaccion,
+            factura.hora,
+            factura.referencia,
+            factura.numero_autorizacion,
+            factura.punto_recaudo
+        )
+    except Exception:
+        os.unlink(ruta_original)
+        raise
     return factura
-
-
-def _consenso(datos_ocr: dict, datos_vision: dict):
-
-    resultado = {}
-
-    resultado["proveedor"] = elegir_proveedor(
-        datos_ocr.get("proveedor", ""),
-        datos_vision.get("proveedor", "")
-    )
-
-    resultado["numero_factura"] = elegir_numero_factura(
-        datos_ocr.get("numero_factura", ""),
-        datos_vision.get("numero_factura", "")
-    )
-
-    resultado["cliente"] = elegir_cliente(
-        datos_ocr.get("cliente", ""),
-        datos_vision.get("cliente", "")
-    )
-
-    resultado["nombre_cliente"] = elegir_nombre_cliente(
-        datos_ocr.get("nombre_cliente", ""),
-        datos_vision.get("nombre_cliente", "")
-    )
-
-    resultado["nit"] = elegir_nit(
-        datos_ocr.get("nit", ""),
-        datos_vision.get("nit", "")
-    )
-
-    resultado["fecha"] = elegir_fecha(
-        datos_ocr.get("fecha", ""),
-        datos_vision.get("fecha", "")
-    )
-
-    resultado["total"] = elegir_total(
-        datos_ocr.get("total", ""),
-        datos_vision.get("total", "")
-    )
-
-    resultado["banco"] = datos_vision.get(
-        "banco",
-        datos_ocr.get("banco", "")
-    )
-
-    return resultado

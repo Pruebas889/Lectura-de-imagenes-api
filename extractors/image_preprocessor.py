@@ -18,7 +18,7 @@ def _detectar_y_rotar_documento(img: Image.Image) -> Image.Image:
     ancho, alto = img.size
     
     if ancho > alto:
-        print("[PREPROCESSOR] Imagen horizontal detectada → Rotando 90°")
+        print("[PREPROCESSOR] Imagen horizontal detectada -> Rotando 90 grados")
         img = img.rotate(90, expand=True)
         print(f"[PREPROCESSOR] Nueva dimensión: {img.size}")
     
@@ -28,7 +28,7 @@ def _detectar_y_rotar_documento(img: Image.Image) -> Image.Image:
 def procesar_imagen_fotografia(ruta_imagen: str) -> str:
     """
     Procesa foto de documento.
-    Simple: redimensionar → iluminar → blur → contraste → nitidez.
+    Simple: redimensionar -> iluminar -> blur -> contraste -> nitidez.
     """
     
     print(f"\n[PREPROCESSOR] Procesando: {ruta_imagen}")
@@ -41,6 +41,8 @@ def procesar_imagen_fotografia(ruta_imagen: str) -> str:
         # =====================================
 
         img_cv = cv2.imread(ruta_imagen)
+        if img_cv is None:
+            raise ValueError("OpenCV no pudo abrir el archivo de imagen.")
 
         gray_shadow = cv2.cvtColor(
             img_cv,
@@ -106,13 +108,13 @@ def procesar_imagen_fotografia(ruta_imagen: str) -> str:
         # Cuanto más oscura, más iluminamos
         if media_brillo < 100:
             factor_brillo = 1.5  # Muy oscura
-            print("[PREPROCESSOR] Imagen oscura → +50% brillo")
+            print("[PREPROCESSOR] Imagen oscura -> +50% brillo")
         elif media_brillo < 130:
             factor_brillo = 1.3 # Medianamente oscura
-            print("[PREPROCESSOR] Imagen mediana → +30% brillo")
+            print("[PREPROCESSOR] Imagen mediana -> +30% brillo")
         else:
             factor_brillo = 1.0  # Clara
-            print("[PREPROCESSOR] Imagen clara → +10% brillo")
+            print("[PREPROCESSOR] Imagen clara -> +10% brillo")
         
         enhancer_bright = ImageEnhance.Brightness(img)
         img = enhancer_bright.enhance(factor_brillo)
@@ -191,12 +193,10 @@ def procesar_imagen_fotografia(ruta_imagen: str) -> str:
             ruta_temp = tmp.name
         
         img.save(ruta_temp, "PNG")
-        print(f"[PREPROCESSOR] ✅ Imagen procesada: {ruta_temp}")
+        print(f"[PREPROCESSOR] Imagen procesada: {ruta_temp}")
         
         return ruta_temp
         
     except Exception as e:
-        print(f"[PREPROCESSOR] ❌ ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+        print(f"[PREPROCESSOR] ERROR: {e}")
+        raise RuntimeError(f"No se pudo preprocesar la imagen: {e}") from e

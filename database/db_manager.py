@@ -1,19 +1,23 @@
 from config.settings import DB_ENGINE
 
-if DB_ENGINE.lower() == "mysql":
-
+if DB_ENGINE == "mysql":
     from database.mysql_manager import (
         crear_tabla,
         guardar_factura,
         obtener_todas,
-        obtener_por_id
+        obtener_por_id,
+        borrar_todas
     )
-
-else:
-
+elif DB_ENGINE == "sqlite":
     from database.sqlite_manager import (
         crear_tabla,
         guardar_factura,
         obtener_todas,
-        obtener_por_id
+        obtener_por_id,
+        borrar_todas
+    )
+else:
+    raise ValueError(
+        f"Motor de base de datos no soportado: {DB_ENGINE!r}. "
+        "Usa 'sqlite' o 'mysql'."
     )

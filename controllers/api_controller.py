@@ -1,60 +1,322 @@
-from flask import jsonify, request
-from database.db_manager import obtener_todas, obtener_por_id
+import base64
+import json
+import mimetypes
 import os
+import zipfile
+from flask import jsonify, request, send_file
+from io import BytesIO
+from pdf2image import convert_from_bytes, convert_from_path
+from PIL import Image
+from werkzeug.utils import secure_filename
+from database.db_manager import obtener_todas, obtener_por_id, borrar_todas
+from config.settings import (
+    DOCUMENT_FOLDER,
+    PDF_FOLDER,
+    POPPLER_PATH,
+)
 import tempfile
 
 from services.factura_service import _procesar_archivo
+from extractors.ai_extractor import GroqQuotaExceeded
 
-import threading
+EXTENSIONES_DOCUMENTO = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
-LOCK_PROCESAMIENTO = threading.Lock()
 
-def api_procesar():
-    """
-    POST /api/procesar
-    Body: multipart/form-data  campo: 'archivo'  (PDF, JPG o PNG)
-    """
-    if "archivo" not in request.files:
-        return jsonify({"error": "Falta el campo 'archivo' en el form-data"}), 400
+def _ruta_documento_factura(factura):
+    try:
+        nombre_guardado = factura["archivo_original"]
+    except (IndexError, KeyError):
+        nombre_guardado = None
 
-    archivo = request.files["archivo"]
-    if not archivo.filename:
-        return jsonify({"error": "Nombre de archivo vacío"}), 400
+    carpeta = DOCUMENT_FOLDER
+    nombre = nombre_guardado
+    if not nombre:
+        carpeta = PDF_FOLDER
+        nombre = factura["nombre_archivo"]
 
-    sufijo = os.path.splitext(archivo.filename)[1]
-    with tempfile.NamedTemporaryFile(delete=False, suffix=sufijo) as tmp:
-        archivo.save(tmp.name)
-        ruta_tmp = tmp.name
+    if not nombre or os.path.basename(nombre) != nombre:
+        return None
+
+    extension = os.path.splitext(nombre)[1].lower()
+    if extension not in EXTENSIONES_DOCUMENTO:
+        return None
+
+    ruta = os.path.join(carpeta, nombre)
+    return ruta if os.path.isfile(ruta) else None
+
+
+def api_miniatura_factura(factura_id):
+    factura = obtener_por_id(factura_id)
+    if not factura:
+        return jsonify({"error": "Factura no encontrada"}), 404
+
+    ruta = _ruta_documento_factura(factura)
+    if not ruta:
+        return jsonify({"error": "El documento original no está disponible"}), 404
 
     try:
+        extension = os.path.splitext(ruta)[1].lower()
+        if extension == ".pdf":
+            paginas = convert_from_path(
+                ruta,
+                dpi=90,
+                first_page=1,
+                last_page=1,
+                poppler_path=POPPLER_PATH
+            )
+            if not paginas:
+                return jsonify({"error": "El PDF no contiene páginas para mostrar"}), 422
+            imagen = paginas[0]
+        else:
+            imagen = Image.open(ruta)
 
-        print(f"[COLA] Esperando turno: {archivo.filename}")
+        imagen.thumbnail((900, 1100))
+        salida = BytesIO()
+        imagen.convert("RGB").save(salida, format="JPEG", quality=82, optimize=True)
+        salida.seek(0)
+        return send_file(salida, mimetype="image/jpeg")
+    except Exception as error:
+        print(f"[Invoice thumbnail] No se pudo renderizar factura {factura_id}: {error}")
+        return jsonify({"error": "No se pudo generar la miniatura del documento"}), 422
 
-        with LOCK_PROCESAMIENTO:
 
-            print(f"[COLA] Iniciando procesamiento: {archivo.filename}")
+def api_previsualizar_factura(factura_id):
+    factura = obtener_por_id(factura_id)
+    if not factura:
+        return jsonify({"error": "Factura no encontrada"}), 404
 
-            factura = _procesar_archivo(ruta_tmp, archivo.filename)
+    ruta = _ruta_documento_factura(factura)
+    if not ruta:
+        return jsonify({"error": "El documento original no está disponible"}), 404
 
-            print(f"[COLA] Finalizo procesamiento: {archivo.filename}")
-        
+    try:
+        extension = os.path.splitext(ruta)[1].lower()
+        if extension == ".pdf":
+            paginas = convert_from_path(ruta, dpi=120, poppler_path=POPPLER_PATH)
+        else:
+            paginas = [Image.open(ruta)]
+
+        if not paginas:
+            return jsonify({"error": "El documento no contiene páginas para mostrar"}), 422
+
+        resultado = []
+        for numero, pagina in enumerate(paginas, start=1):
+            imagen = BytesIO()
+            pagina.convert("RGB").save(
+                imagen,
+                format="JPEG",
+                quality=82,
+                optimize=True
+            )
+            contenido = base64.b64encode(imagen.getvalue()).decode("ascii")
+            resultado.append({
+                "numero": numero,
+                "imagen": f"data:image/jpeg;base64,{contenido}"
+            })
+
+        return jsonify({"paginas": resultado})
+    except Exception as error:
+        print(f"[Invoice viewer] No se pudo abrir factura {factura_id}: {error}")
+        return jsonify({"error": "No se pudo abrir el documento original"}), 422
+
+
+def api_abrir_documento_factura(factura_id):
+    factura = obtener_por_id(factura_id)
+    if not factura:
+        return jsonify({"error": "Factura no encontrada"}), 404
+
+    ruta = _ruta_documento_factura(factura)
+    if not ruta:
+        return jsonify({"error": "El documento original no está disponible"}), 404
+
+    respuesta = send_file(
+        ruta,
+        mimetype=mimetypes.guess_type(ruta)[0] or "application/octet-stream",
+        as_attachment=False,
+        download_name=os.path.basename(ruta)
+    )
+    respuesta.headers["X-Content-Type-Options"] = "nosniff"
+    return respuesta
+
+
+def api_previsualizar_pdf():
+    """Renderiza la primera página del PDF como imagen para la vista previa."""
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"error": "Falta un archivo PDF"}), 400
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 415
+
+    try:
+        paginas = convert_from_bytes(
+            archivo.read(),
+            dpi=120,
+            first_page=1,
+            last_page=1,
+            poppler_path=POPPLER_PATH
+        )
+        if not paginas:
+            return jsonify({"error": "El PDF no contiene páginas para mostrar"}), 422
+
+        paginas[0].thumbnail((1000, 1200))
+        imagen = BytesIO()
+        paginas[0].save(imagen, format="PNG", optimize=True)
+        imagen.seek(0)
+        return send_file(imagen, mimetype="image/png")
+    except Exception as error:
+        print(f"[PDF preview] No se pudo renderizar {archivo.filename}: {error}")
         return jsonify({
+            "error": "No se pudo generar la vista previa. Verifica que Poppler esté instalado."
+        }), 422
+
+
+def api_previsualizar_pdf_completo():
+    """Renderiza todas las páginas de un PDF para mostrarlas en el visor."""
+    archivo = request.files.get("archivo")
+    if not archivo or not archivo.filename:
+        return jsonify({"error": "Falta un archivo PDF"}), 400
+    if not archivo.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 415
+
+    try:
+        paginas = convert_from_bytes(
+            archivo.read(),
+            dpi=120,
+            poppler_path=POPPLER_PATH
+        )
+        if not paginas:
+            return jsonify({"error": "El PDF no contiene páginas para mostrar"}), 422
+
+        resultado = []
+        for numero, pagina in enumerate(paginas, start=1):
+            pagina.thumbnail((1400, 1800))
+            imagen = BytesIO()
+            pagina.convert("RGB").save(
+                imagen,
+                format="JPEG",
+                quality=82,
+                optimize=True
+            )
+            contenido = base64.b64encode(imagen.getvalue()).decode("ascii")
+            resultado.append({
+                "numero": numero,
+                "imagen": f"data:image/jpeg;base64,{contenido}"
+            })
+
+        return jsonify({"paginas": resultado})
+    except Exception as error:
+        print(f"[PDF viewer] No se pudo renderizar {archivo.filename}: {error}")
+        return jsonify({
+            "error": "No se pudo abrir el documento. Verifica que Poppler esté instalado."
+        }), 422
+
+
+def _procesar_archivo_subido(archivo):
+    nombre = os.path.basename((archivo.filename or "").replace("\\", "/"))
+    if not nombre:
+        raise ValueError("Nombre de archivo vacío")
+
+    extension = os.path.splitext(nombre)[1].lower()
+    if extension not in EXTENSIONES_DOCUMENTO:
+        raise ValueError(
+            "Formato no soportado. Usa PDF, JPG, PNG, WEBP, BMP o TIFF."
+        )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temporal:
+        ruta_tmp = temporal.name
+    try:
+        archivo.save(ruta_tmp)
+        return _procesar_archivo(ruta_tmp, nombre)
+    finally:
+        if os.path.exists(ruta_tmp):
+            os.unlink(ruta_tmp)
+
+
+def _resultado_procesamiento(archivo):
+    nombre = os.path.basename((archivo.filename or "").replace("\\", "/"))
+    try:
+        factura = _procesar_archivo_subido(archivo)
+        return {
+            "archivo": nombre,
             "ok": True,
             "datos": {
+                "factura_id": factura.id,
                 "nombre_archivo": factura.nombre_archivo,
-                "tipo":           factura.tipo_pdf,
-                "proveedor":      factura.proveedor,
-                "total":          factura.total,
-                "fecha":          factura.fecha,
-                "banco":          factura.banco
+                "tipo": factura.tipo_pdf,
+                "proveedor": factura.proveedor,
+                "total": factura.total,
+                "fecha": factura.fecha,
+                "banco": factura.banco,
+                "nit_proveedor": factura.nit_proveedor,
+                "estado_transaccion": factura.estado_transaccion,
+                "hora": factura.hora,
+                "referencia": factura.referencia,
+                "numero_autorizacion": factura.numero_autorizacion,
+                "punto_recaudo": factura.punto_recaudo,
+                "texto_extraido": factura.texto_extraido,
+                "advertencia_cuota_groq": factura.advertencia_cuota_groq
             }
-        })
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 415
-    except Exception as e:
-        return jsonify({"error": f"Error interno: {str(e)}"}), 500
-    finally:
-        os.unlink(ruta_tmp)
+        }
+    except (ValueError, RuntimeError, GroqQuotaExceeded) as error:
+        if isinstance(error, GroqQuotaExceeded):
+            estado = 429
+        elif isinstance(error, ValueError):
+            estado = 400 if str(error) == "Nombre de archivo vacío" else 415
+        else:
+            estado = 422
+        return {
+            "archivo": nombre,
+            "ok": False,
+            "error": str(error),
+            "estado_http": estado
+        }
+    except Exception as error:
+        print(f"[API processing] Error inesperado al procesar {nombre!r}: {error}")
+        return {
+            "archivo": nombre,
+            "ok": False,
+            "error": "Error interno al procesar el archivo.",
+            "estado_http": 500
+        }
+
+
+def _respuesta_lote(archivos):
+    if not archivos:
+        return jsonify({"error": "Selecciona al menos un archivo."}), 400
+
+    resultados = [_resultado_procesamiento(archivo) for archivo in archivos]
+    exitosos = sum(resultado["ok"] for resultado in resultados)
+    fallidos = len(resultados) - exitosos
+    return jsonify({
+        "ok": fallidos == 0,
+        "total": len(resultados),
+        "exitosos": exitosos,
+        "fallidos": fallidos,
+        "resultados": resultados
+    })
+
+
+def api_procesar():
+    """Procesa un archivo legado o varios archivos enviados como 'archivos'."""
+    archivos_lote = request.files.getlist("archivos")
+    if archivos_lote:
+        return _respuesta_lote(archivos_lote)
+
+    archivo = request.files.get("archivo")
+    if archivo is None:
+        return jsonify({
+            "error": "Falta el campo 'archivo' o 'archivos' en el form-data."
+        }), 400
+
+    resultado = _resultado_procesamiento(archivo)
+    if not resultado["ok"]:
+        return jsonify({"error": resultado["error"]}), resultado["estado_http"]
+    return jsonify({"ok": True, "datos": resultado["datos"]})
+
+
+def api_procesar_lote():
+    """Procesa varios archivos y devuelve un resultado independiente por archivo."""
+    return _respuesta_lote(request.files.getlist("archivos"))
 
 
 def api_listar():
@@ -69,11 +331,152 @@ def api_detalle(factura_id):
         return jsonify({"error": "No encontrada"}), 404
     return jsonify(dict(factura))
 
+
+def api_descargar_json_factura(factura_id):
+    """Descarga los datos extraídos de una factura como archivo JSON."""
+    factura = obtener_por_id(factura_id)
+    if not factura:
+        return jsonify({"error": "No encontrada"}), 404
+
+    datos = _datos_json_factura(factura)
+    nombre = secure_filename(os.path.splitext(factura["nombre_archivo"])[0])
+    nombre_descarga = f"{nombre or f'factura-{factura_id}'}.json"
+    contenido = BytesIO(
+        json.dumps(datos, ensure_ascii=False, indent=2).encode("utf-8")
+    )
+    return send_file(
+        contenido,
+        mimetype="application/json",
+        as_attachment=True,
+        download_name=nombre_descarga
+    )
+
+
+def _datos_json_factura(factura):
+    return {
+        "ok": True,
+        "archivo": factura["nombre_archivo"],
+        "datos": {
+            "tipo": factura["tipo_pdf"] or "",
+            "proveedor": factura["proveedor"] or "",
+            "nit_proveedor": factura["nit_proveedor"] or "",
+            "total": factura["total"] or "",
+            "estado_transaccion": factura["estado_transaccion"] or "",
+            "fecha": factura["fecha"] or "",
+            "hora": factura["hora"] or "",
+            "referencia": factura["referencia"] or "",
+            "numero_autorizacion": factura["numero_autorizacion"] or "",
+            "punto_recaudo": factura["punto_recaudo"] or "",
+            "banco": factura["banco"] or ""
+        }
+    }
+
+
+def api_descargar_json_lote():
+    """Descarga los JSON de las facturas indicadas dentro de una carpeta ZIP."""
+    solicitud = request.get_json(silent=True)
+    factura_ids = solicitud.get("factura_ids") if isinstance(solicitud, dict) else None
+    if not isinstance(factura_ids, list) or not factura_ids:
+        return jsonify({"error": "Selecciona al menos una factura para descargar."}), 400
+    if any(
+        not isinstance(factura_id, int) or isinstance(factura_id, bool) or factura_id < 1
+        for factura_id in factura_ids
+    ):
+        return jsonify({"error": "La lista de facturas contiene identificadores no válidos."}), 400
+
+    facturas = []
+    ids_vistos = set()
+    for factura_id in factura_ids:
+        if factura_id in ids_vistos:
+            continue
+        ids_vistos.add(factura_id)
+        factura = obtener_por_id(factura_id)
+        if not factura:
+            return jsonify({"error": f"No se encontró la factura {factura_id}."}), 404
+        facturas.append(factura)
+
+    contenido = BytesIO()
+    nombres_usados = set()
+    with zipfile.ZipFile(contenido, mode="w", compression=zipfile.ZIP_DEFLATED) as archivo_zip:
+        for factura in facturas:
+            factura_id = factura["id"]
+            base_nombre = secure_filename(
+                os.path.splitext(factura["nombre_archivo"])[0]
+            ) or f"factura-{factura_id}"
+            nombre_json = f"{base_nombre}.json"
+            if nombre_json.casefold() in nombres_usados:
+                nombre_json = f"{base_nombre}-{factura_id}.json"
+                consecutivo = 2
+                while nombre_json.casefold() in nombres_usados:
+                    nombre_json = f"{base_nombre}-{factura_id}-{consecutivo}.json"
+                    consecutivo += 1
+            nombres_usados.add(nombre_json.casefold())
+            ruta_json = f"Facturas JSON/{nombre_json}"
+            archivo_zip.writestr(
+                ruta_json,
+                json.dumps(
+                    _datos_json_factura(factura),
+                    ensure_ascii=False,
+                    indent=2
+                )
+            )
+
+    contenido.seek(0)
+    return send_file(
+        contenido,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="Facturas JSON.zip"
+    )
+
+
+def api_borrar_historial():
+    """DELETE /api/facturas → elimina todas las facturas guardadas."""
+    eliminadas = borrar_todas()
+    return jsonify({"ok": True, "eliminadas": eliminadas})
+
+
 def registrar_rutas(app):
+
+    app.add_url_rule(
+        "/api/facturas/<int:factura_id>/miniatura",
+        view_func=api_miniatura_factura,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/facturas/<int:factura_id>/previsualizar",
+        view_func=api_previsualizar_factura,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/facturas/<int:factura_id>/original",
+        view_func=api_abrir_documento_factura,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/previsualizar-pdf",
+        view_func=api_previsualizar_pdf,
+        methods=["POST"]
+    )
+
+    app.add_url_rule(
+        "/api/previsualizar-pdf-completo",
+        view_func=api_previsualizar_pdf_completo,
+        methods=["POST"]
+    )
 
     app.add_url_rule(
         "/api/procesar",
         view_func=api_procesar,
+        methods=["POST"]
+    )
+
+    app.add_url_rule(
+        "/api/procesar-lote",
+        view_func=api_procesar_lote,
         methods=["POST"]
     )
 
@@ -89,22 +492,20 @@ def registrar_rutas(app):
         methods=["GET"]
     )
 
-def registrar_rutas(app):
+    app.add_url_rule(
+        "/api/facturas/<int:factura_id>/json",
+        view_func=api_descargar_json_factura,
+        methods=["GET"]
+    )
 
     app.add_url_rule(
-        "/api/procesar",
-        view_func=api_procesar,
+        "/api/facturas/json/descargar-lote",
+        view_func=api_descargar_json_lote,
         methods=["POST"]
     )
 
     app.add_url_rule(
         "/api/facturas",
-        view_func=api_listar,
-        methods=["GET"]
-    )
-
-    app.add_url_rule(
-        "/api/facturas/<int:factura_id>",
-        view_func=api_detalle,
-        methods=["GET"]
+        view_func=api_borrar_historial,
+        methods=["DELETE"]
     )

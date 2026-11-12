@@ -1,8 +1,7 @@
 from config.imports import *
-from PIL import ImageEnhance
-from config.settings import TESSERACT_PATH, POPPLER_PATH
-
-pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+from config.settings import POPPLER_PATH
+from pdf2image import pdfinfo_from_path
+from extractors.ocr_utils import validar_tesseract
 
 
 def extraer_texto_ocr(ruta_pdf):
@@ -12,72 +11,51 @@ def extraer_texto_ocr(ruta_pdf):
     """
 
     texto_completo = ""
+    validar_tesseract()
 
     try:
-        # Convertir el PDF en lista de imagenes: una imagen por pagina.
-        # dpi=300 da buena resolucion para OCR, aunque puede ser mas lento.
-        paginas = convert_from_path(
-            ruta_pdf,
-            dpi=500,
-            poppler_path=POPPLER_PATH
-        )
+        info_pdf = pdfinfo_from_path(ruta_pdf, poppler_path=POPPLER_PATH)
+        total_paginas = int(info_pdf.get("Pages", 0))
+        if total_paginas < 1:
+            raise RuntimeError("El PDF no contiene páginas.")
 
-        for numero_pagina, imagen in enumerate(paginas, start=1):
+        for numero_pagina in range(1, total_paginas + 1):
             print(f"Procesando pagina {numero_pagina} con OCR...")
-
-            # --oem 3 usa el mejor motor disponible.
-            # --psm 6 asume un bloque uniforme de texto.
-            # -l spa+eng usa espanol e ingles para facturas mixtas.
-            config_ocr = (
-                "--oem 3 "
-                "--psm 6 "
-                "-l spa+eng "
-                "-c preserve_interword_spaces=1 "
-                "-c textord_heavy_nr=1 "
-                "-c textord_min_linesize=2.5"
+            paginas = convert_from_path(
+                ruta_pdf,
+                dpi=200,
+                first_page=numero_pagina,
+                last_page=numero_pagina,
+                poppler_path=POPPLER_PATH
             )
+            if not paginas:
+                continue
 
-            # Convertir a escala de grises
-            imagen = imagen.convert("L")
-
-            # Contraste
-            imagen = ImageEnhance.Contrast(imagen).enhance(4)
-
-            # Nitidez
-            imagen = ImageEnhance.Sharpness(imagen).enhance(3)
-
-            # Escalar imagen
-            ancho, alto = imagen.size
-            imagen = imagen.resize(
-            (ancho * 2, alto * 2)
-            )
-
-            # Binarización
-            imagen = imagen.point(
-            lambda x: 255 if x > 160 else 0,
-            mode="1"
-            )
-
-            # OCR
-            texto = pytesseract.image_to_string(
-                imagen,
-                config=config_ocr
-            )
-
-            texto2 = pytesseract.image_to_string(
-                imagen,
-                config=config_ocr.replace("--psm 6", "--psm 11")
-            )
-
-            if len(texto2) > len(texto):
-                texto = texto2
+            imagen = paginas[0]
+            imagen_ocr = None
+            try:
+                config_ocr = (
+                    "--oem 3 "
+                    "--psm 6 "
+                    "-l spa+eng "
+                    "-c preserve_interword_spaces=1 "
+                    "-c textord_heavy_nr=1 "
+                    "-c textord_min_linesize=2.5"
+                )
+                imagen_ocr = imagen.convert("L")
+                texto = pytesseract.image_to_string(imagen_ocr, config=config_ocr)
+            finally:
+                if imagen_ocr is not None:
+                    imagen_ocr.close()
+                for pagina in paginas:
+                    pagina.close()
 
             if texto.strip():
                 texto_completo += f"\n--- Pagina {numero_pagina} (OCR) ---\n"
                 texto_completo += texto
     except Exception as e:
         print(f"Error en OCR de {ruta_pdf}: {e}")
-        return ""
+        raise RuntimeError(f"No se pudo convertir o leer el PDF con OCR: {e}") from e
 
     return texto_completo
 
@@ -98,5 +76,6 @@ def es_pdf_escaneado(ruta_pdf):
                 return True
 
             return False
-    except Exception:
+    except Exception as error:
+        print(f"No se pudo inspeccionar {ruta_pdf}; se intentará OCR: {error}")
         return True

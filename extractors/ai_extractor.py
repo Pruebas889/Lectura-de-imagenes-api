@@ -1,16 +1,29 @@
 import base64
 import json
-from groq import Groq
-from config.settings import GROQ_API_KEY, GROQ_MODEL_TEXTO, GROQ_MODEL_VISION 
+from groq import Groq, RateLimitError
+from config.settings import GROQ_API_KEY, GROQ_MODEL_TEXTO, GROQ_MODEL_VISION
 
 from config.imports import *
 from io import BytesIO
 from PIL import Image
 
 
-client = Groq(api_key=GROQ_API_KEY)
+class GroqQuotaExceeded(RuntimeError):
+    """Señala que Groq rechazó la solicitud por un límite de uso."""
 
-EXTENSIONES_IMAGEN = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
+
+_client = None
+
+
+def _obtener_cliente():
+    global _client
+    if not GROQ_API_KEY:
+        return None
+    if _client is None:
+        _client = Groq(api_key=GROQ_API_KEY)
+    return _client
+
+EXTENSIONES_IMAGEN = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 PROMPT_FACTURA = """
 Eres un experto en validación de facturas y recibos.
@@ -64,7 +77,16 @@ def _normalizar(datos: dict) -> dict:
         "fecha_factura": "fecha",
         "fecha_emision": "fecha",
 
-        "entidad_bancaria": "banco"
+        "entidad_bancaria": "banco",
+        "nit": "nit_proveedor",
+        "estado_transaccion": "estado_transaccion",
+        "estado_de_transaccion": "estado_transaccion",
+        "hora_transaccion": "hora",
+        "numero_referencia": "referencia",
+        "referencia_pago": "referencia",
+        "numero_de_autorizacion": "numero_autorizacion",
+        "nro_autorizacion": "numero_autorizacion",
+        "punto_de_recaudo": "punto_recaudo"
     }
 
     for clave, valor in datos.items():
@@ -175,8 +197,12 @@ def extraer_texto_con_ia(texto: str) -> dict:
     Usa llama-3.3 para extraer datos de texto ya procesado
     (PDFs digitales procesados con pdfplumber o texto OCR).
     """
+    cliente = _obtener_cliente()
+    if cliente is None:
+        return {}
+
     try:
-        respuesta = client.chat.completions.create(
+        respuesta = cliente.chat.completions.create(
             model=GROQ_MODEL_TEXTO,
             messages=[
                 {"role": "system", "content": PROMPT_FACTURA},
@@ -189,6 +215,10 @@ def extraer_texto_con_ia(texto: str) -> dict:
         contenido = respuesta.choices[0].message.content
         return _normalizar (json.loads(contenido))
     except Exception as e:
+        if isinstance(e, RateLimitError) or getattr(e, "status_code", None) == 429:
+            raise GroqQuotaExceeded(
+                "Groq alcanzó un límite de uso (cuota o solicitudes por minuto)."
+            ) from e
         print(f"[Groq texto] error: {e}")
         return _normalizar({})
     
@@ -198,6 +228,10 @@ def extraer_con_ia_desde_imagen(ruta_imagen: str, datos_ocr: dict | None = None)
     Usa llama-4-scout con visión, lee la imagen directamente sin OCR.
     Es más preciso que OCR + texto para documentos escaneados.
     """
+    cliente = _obtener_cliente()
+    if cliente is None:
+        return {}
+
     try:
         b64, mime = _imagen_a_base64(ruta_imagen)
 
@@ -312,7 +346,7 @@ def extraer_con_ia_desde_imagen(ruta_imagen: str, datos_ocr: dict | None = None)
 
             prompt = PROMPT_FACTURA
 
-        respuesta = client.chat.completions.create(
+        respuesta = cliente.chat.completions.create(
             model=GROQ_MODEL_VISION,
             messages=[
                 {
@@ -343,6 +377,10 @@ def extraer_con_ia_desde_imagen(ruta_imagen: str, datos_ocr: dict | None = None)
 
         return _normalizar(json.loads(contenido[inicio:fin]))
     except Exception as e:
+        if isinstance(e, RateLimitError) or getattr(e, "status_code", None) == 429:
+            raise GroqQuotaExceeded(
+                "Groq alcanzó un límite de uso (cuota o solicitudes por minuto)."
+            ) from e
         print(f"[Groq vision] Error: {e}")
         return _normalizar({})
     

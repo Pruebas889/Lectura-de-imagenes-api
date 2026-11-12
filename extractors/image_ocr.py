@@ -1,34 +1,9 @@
 from PIL import Image
 import pytesseract
-import tempfile
 import os
 
 from extractors.image_preprocessor import procesar_imagen_fotografia
-from config.settings import TESSERACT_PATH
-
-pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
-
-
-def _aplicar_upscale(img: Image.Image, factor_minimo: int = 2000) -> Image.Image:
-    """
-    Aplica upscale (zoom) a la imagen COMPLETA.
-    Si el ancho es menor a factor_minimo, la agranda.
-    """
-    
-    ancho, alto = img.size
-    
-    if ancho < factor_minimo:
-        factor_escala = factor_minimo / ancho
-        nuevo_ancho = int(ancho * factor_escala)
-        nuevo_alto = int(alto * factor_escala)
-        
-        img = img.resize(
-            (nuevo_ancho, nuevo_alto),
-            Image.Resampling.LANCZOS
-        )
-        print(f"[image_ocr] Upscale: {ancho}x{alto} → {nuevo_ancho}x{nuevo_alto}")
-    
-    return img
+from extractors.ocr_utils import validar_tesseract
 
 
 def extraer_texto_imagen(ruta_imagen):
@@ -36,9 +11,7 @@ def extraer_texto_imagen(ruta_imagen):
     Extrae texto de imagen fotográfica SIN dividir en bloques.
     Procesamiento COMPLETO de la imagen:
     1. Preprocesar (rotación + filtro básico)
-    2. Upscale moderado (2000px)
-    3. OCR directo con Tesseract
-    4. Limpiar
+    2. OCR directo con Tesseract
     
     Este método es MÁS FIABLE porque:
     - No divide la imagen (evita pérdida de contexto)
@@ -49,32 +22,15 @@ def extraer_texto_imagen(ruta_imagen):
     print("=" * 60)
     print("EXTRAYENDO TEXTO DE IMAGEN - PROCESAMIENTO COMPLETO")
     print("=" * 60)
+    validar_tesseract()
 
+    ruta_procesada = None
     try:
-        # PASO 1: Preprocesar la imagen
         ruta_procesada = procesar_imagen_fotografia(ruta_imagen)
         
         if ruta_procesada is None:
-            print("[image_ocr] ❌ Preprocesamiento falló")
-            return ""
-        
-        # PASO 2: Abrir imagen procesada
-        img_procesada = Image.open(ruta_procesada)
-        print(f"[image_ocr] Imagen procesada: {img_procesada.size}")
-        
-        # PASO 3: Aplicar upscale a la imagen COMPLETA
-        print("[image_ocr] Aplicando upscale a imagen completa (2000px)...")
-        img_procesada = _aplicar_upscale(img_procesada, factor_minimo=2000)
-        
-        # PASO 4: Guardar imagen upscaleada como PNG temporal
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            ruta_png = tmp.name
-        
-        img_procesada.save(ruta_png, "PNG")
-        print(f"[image_ocr] PNG temporal creado: {ruta_png}")
-        
-        # PASO 5: OCR en la imagen COMPLETA
-        print("[image_ocr] Ejecutando OCR en imagen completa...")
+            print("[image_ocr] ERROR: Preprocesamiento falló")
+            raise RuntimeError("No se pudo preprocesar la imagen para OCR.")
         
         config_ocr = (
             "--oem 3 "
@@ -85,32 +41,26 @@ def extraer_texto_imagen(ruta_imagen):
         )
         
         try:
-            texto_completo = pytesseract.image_to_string(ruta_png, config=config_ocr)
+            with Image.open(ruta_procesada) as img_procesada:
+                print(f"[image_ocr] Imagen procesada: {img_procesada.size}")
+                texto_completo = pytesseract.image_to_string(
+                    img_procesada,
+                    config=config_ocr
+                )
         except Exception as e:
-            print(f"[image_ocr] ❌ Error en OCR: {e}")
-            texto_completo = ""
+            raise RuntimeError(f"No se pudo leer el texto de la imagen: {e}") from e
         
         texto_completo = texto_completo.strip()
-        
-        # PASO 6: Limpiar archivos temporales
-        print("[image_ocr] Limpiando archivos temporales...")
-        try:
-            os.remove(ruta_procesada)
-        except:
-            pass
-        
-        try:
-            os.remove(ruta_png)
-        except:
-            pass
-        
         caracteres = len(texto_completo)
-        print(f"[image_ocr] ✅ OCR completado ({caracteres} caracteres)")
+        print(f"[image_ocr] OCR completado ({caracteres} caracteres)")
         
         return texto_completo
 
+    except RuntimeError:
+        raise
     except Exception as e:
-        print(f"[image_ocr] ❌ Error en OCR de imagen: {e}")
-        import traceback
-        traceback.print_exc()
-        return ""
+        print(f"[image_ocr] ERROR en OCR de imagen: {e}")
+        raise RuntimeError(f"Fallo el procesamiento OCR de la imagen: {e}") from e
+    finally:
+        if ruta_procesada and os.path.exists(ruta_procesada):
+            os.remove(ruta_procesada)

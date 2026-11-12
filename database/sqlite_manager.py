@@ -1,3 +1,4 @@
+from contextlib import closing
 import os
 import sqlite3
 
@@ -13,11 +14,11 @@ def crear_tabla():
     """
 
     #sqlite3.connect() abre o crea si no existe en su defecto, el archivo .db
-    #'with' asegura que la conexion se cierre sola aunque tenga errrores
+    # closing garantiza el cierre; el gestor de contexto de sqlite solo confirma transacciones.
 
     asegurar_carpeta_db()
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
 
         cursor = conn.cursor() #Escribe en la BD
@@ -35,13 +36,51 @@ def crear_tabla():
                 total TEXT,
                 fecha TEXT,
                 proveedor TEXT,
+                nit_proveedor TEXT,
+                estado_transaccion TEXT,
+                hora TEXT,
+                referencia TEXT,
+                numero_autorizacion TEXT,
+                punto_recaudo TEXT,
+                archivo_original TEXT,
                 fecha_procesado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        columnas = {
+            fila[1]
+            for fila in conn.execute("PRAGMA table_info(facturas)").fetchall()
+        }
+        if "archivo_original" not in columnas:
+            cursor.execute("ALTER TABLE facturas ADD COLUMN archivo_original TEXT")
+        for columna in (
+            "nit_proveedor",
+            "estado_transaccion",
+            "hora",
+            "referencia",
+            "numero_autorizacion",
+            "punto_recaudo"
+        ):
+            if columna not in columnas:
+                cursor.execute(f"ALTER TABLE facturas ADD COLUMN {columna} TEXT")
         conn.commit() #Guarda los cambios en la BD
         print("Tabla'facturas lista.")
 
-def guardar_factura(nombre_archivo, tipo_pdf, texto_extraido, banco="", total="", fecha="", proveedor=""):
+def guardar_factura(
+    nombre_archivo,
+    tipo_pdf,
+    texto_extraido,
+    banco="",
+    total="",
+    fecha="",
+    proveedor="",
+    archivo_original="",
+    nit_proveedor="",
+    estado_transaccion="",
+    hora="",
+    referencia="",
+    numero_autorizacion="",
+    punto_recaudo=""
+):
     """
     Inserta una factura nuea en la base de datos.
     Recibe los datos ya procesados y los guarda.
@@ -49,7 +88,7 @@ def guardar_factura(nombre_archivo, tipo_pdf, texto_extraido, banco="", total=""
     """
     asegurar_carpeta_db()
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
 
@@ -57,12 +96,23 @@ def guardar_factura(nombre_archivo, tipo_pdf, texto_extraido, banco="", total=""
 
         cursor.execute("""
             INSERT INTO facturas
-            (nombre_archivo, tipo_pdf, texto_extraido, banco, total, fecha, proveedor)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (nombre_archivo, tipo_pdf, texto_extraido, banco, total, fecha, proveedor))
+            (
+                nombre_archivo, tipo_pdf, texto_extraido, banco, total,
+                fecha, proveedor, archivo_original, nit_proveedor,
+                estado_transaccion, hora, referencia, numero_autorizacion,
+                punto_recaudo
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            nombre_archivo, tipo_pdf, texto_extraido, banco, total,
+            fecha, proveedor, archivo_original, nit_proveedor,
+            estado_transaccion, hora, referencia, numero_autorizacion,
+            punto_recaudo
+        ))
 
         conn.commit()
         print(f"Guardado: {nombre_archivo}")
+        return cursor.lastrowid
 
 
 def obtener_todas():
@@ -70,7 +120,7 @@ def obtener_todas():
     Trae todas las facturas en la base de datos y retorna una lista de filas)
     """
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
 
         #row_factory hace que cada fila se pueda usar de diccionario
@@ -87,9 +137,17 @@ def obtener_por_id(factura_id):
     Si no encuentra la factura, retorna None.
     """
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM facturas WHERE id = ?", (factura_id,))
         return cursor.fetchone() #trae solo una fila
+
+
+def borrar_todas():
+    """Elimina todas las facturas y devuelve cuántos registros se borraron."""
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
+        cursor = conn.execute("DELETE FROM facturas")
+        conn.commit()
+        return cursor.rowcount

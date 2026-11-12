@@ -30,51 +30,68 @@ def crear_tabla():
     """
 
     conn = obtener_conexion()
-
+    cursor = None
     try:
-
         cursor = conn.cursor()
-
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS facturas (
-
-                id INT AUTO_INCREMENT PRIMARY KEY,
-
+                id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 nombre_archivo VARCHAR(255) NOT NULL,
-
                 tipo_pdf VARCHAR(50),
-
-
+                texto_extraido LONGTEXT,
                 banco VARCHAR(255),
-
                 total VARCHAR(100),
-
                 fecha VARCHAR(50),
-
                 proveedor VARCHAR(255),
-
+                nit_proveedor VARCHAR(100),
+                estado_transaccion VARCHAR(255),
+                hora VARCHAR(50),
+                referencia VARCHAR(255),
+                numero_autorizacion VARCHAR(255),
+                punto_recaudo VARCHAR(255),
+                archivo_original VARCHAR(255),
                 fecha_procesado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-
-            )
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        columnas = {
+            "texto_extraido": "LONGTEXT",
+            "nit_proveedor": "VARCHAR(100)",
+            "estado_transaccion": "VARCHAR(255)",
+            "hora": "VARCHAR(50)",
+            "referencia": "VARCHAR(255)",
+            "numero_autorizacion": "VARCHAR(255)",
+            "punto_recaudo": "VARCHAR(255)",
+            "archivo_original": "VARCHAR(255)",
+        }
+        for columna, tipo in columnas.items():
+            cursor.execute(f"SHOW COLUMNS FROM facturas LIKE '{columna}'")
+            if not cursor.fetchone():
+                cursor.execute(f"ALTER TABLE facturas ADD COLUMN {columna} {tipo}")
+
         conn.commit()
-
         print("Tabla 'facturas' lista.")
-
     finally:
-
-        cursor.close()
+        if cursor is not None:
+            cursor.close()
         conn.close()
 
 
 def guardar_factura(
     nombre_archivo,
     tipo_pdf,
+    texto_extraido="",
     banco="",
     total="",
     fecha="",
-    proveedor=""
+    proveedor="",
+    archivo_original="",
+    nit_proveedor="",
+    estado_transaccion="",
+    hora="",
+    referencia="",
+    numero_autorizacion="",
+    punto_recaudo=""
 ):
     """
     Guarda una factura en MySQL.
@@ -91,24 +108,41 @@ def guardar_factura(
             (
                 nombre_archivo,
                 tipo_pdf,
+                texto_extraido,
                 banco,
                 total,
                 fecha,
-                proveedor
+                proveedor,
+                archivo_original,
+                nit_proveedor,
+                estado_transaccion,
+                hora,
+                referencia,
+                numero_autorizacion,
+                punto_recaudo
             )
-            VALUES (%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             nombre_archivo,
             tipo_pdf,
+            texto_extraido,
             banco,
             total,
             fecha,
-            proveedor
+            proveedor,
+            archivo_original,
+            nit_proveedor,
+            estado_transaccion,
+            hora,
+            referencia,
+            numero_autorizacion,
+            punto_recaudo
         ))
 
         conn.commit()
 
         print(f"Guardado: {nombre_archivo}")
+        return cursor.lastrowid
 
     finally:
 
@@ -162,5 +196,32 @@ def obtener_por_id(factura_id):
 
     finally:
 
+        cursor.close()
+        conn.close()
+
+
+def borrar_todas():
+    """Elimina todas las facturas y devuelve cuántos registros se borraron."""
+    conn = obtener_conexion()
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM facturas")
+        eliminadas = cursor.rowcount
+        conn.commit()
+        return eliminadas
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def contar_facturas():
+    """Devuelve el número de facturas guardadas."""
+    conn = obtener_conexion()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM facturas")
+        return cursor.fetchone()[0]
+    finally:
         cursor.close()
         conn.close()

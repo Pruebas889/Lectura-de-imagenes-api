@@ -6,7 +6,7 @@ from extractors.pdf_ocr import extraer_texto_ocr, es_pdf_escaneado
 from extractors.image_ocr import extraer_texto_imagen
 from extractors.cleaner import limpiar_texto, extraer_patrones
 from models.factura import Factura
-from extractors.ai_extractor import extraer_texto_con_ia
+from extractors.ai_extractor import GroqQuotaExceeded, extraer_texto_con_ia
 
 def procesar_pdf(ruta_pdf):
     nombre = os.path.basename(ruta_pdf)
@@ -14,26 +14,31 @@ def procesar_pdf(ruta_pdf):
 
     if ruta_pdf.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
 
-        print("Tipo: imagen → OCR + IA")
+        print("Tipo: imagen -> OCR + IA")
         tipo = "imagen"
         texto_crudo = extraer_texto_imagen(ruta_pdf)
 
     elif es_pdf_escaneado(ruta_pdf):
 
-        print("Tipo: escaneado → OCR + IA")
+        print("Tipo: escaneado -> OCR + IA")
         tipo = "escaneado"
         texto_crudo = extraer_texto_ocr(ruta_pdf)
 
     else:
 
-        print("Tipo: digital → extracción directa + IA")
+        print("Tipo: digital -> extracción directa + IA")
         tipo = "digital"
         texto_crudo = extraer_texto_pdf(ruta_pdf)
 
     texto_limpio = limpiar_texto(texto_crudo)
 
     # IA reemplaza los regex, pero si falla usamos regex como respaldo
-    datos = extraer_texto_con_ia(texto_limpio)
+    try:
+        datos = extraer_texto_con_ia(texto_limpio)
+    except GroqQuotaExceeded as error:
+        print(f"ADVERTENCIA: {error} Se continúa con extracción local.")
+        datos = {}
+
     if not any(datos.values()):
         print("IA no respondió, usando regex como respaldo...")
         datos = extraer_patrones(texto_limpio)
