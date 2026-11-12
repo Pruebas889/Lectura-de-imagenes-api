@@ -9,17 +9,22 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-27') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-46') }}">
 </head>
 <body class="modo-carga">
 <h1>
-    <img
-        class="marca-icono"
-        src="{{ url_for('static', filename='img/factura.png') }}"
-        alt=""
-        aria-hidden="true"
-    >
-    <span>Facturas</span>
+    <div class="marca-navegacion">
+        <a class="enlace-inicio" href="{{ url_for('index') }}" aria-label="Ir a Inicio" title="Ir a Inicio">
+            <img class="marca-icono" src="{{ url_for('static', filename='img/factura.png') }}" alt="" aria-hidden="true">
+        </a>
+        <nav class="navegacion-principal" aria-label="Navegación principal">
+            <a href="{{ url_for('index') }}" aria-current="page">Inicio</a>
+            <a href="{{ url_for('cargue_individual') }}">Cargue Individual</a>
+            <a href="{{ url_for('cargue_masivo') }}">Cargue masivo</a>
+            <a href="{{ url_for('historial') }}">Historial</a>
+        </nav>
+    </div>
+    <span class="titulo-encabezado">Facturas</span>
     <button type="button" id="btnTema" class="btn-tema" aria-pressed="false" aria-label="Modo oscuro" title="Modo oscuro">
         <img
             id="iconoTema"
@@ -39,7 +44,7 @@
     </div>
 
     <div class="opciones-carga">
-        <a class="opcion-carga" href="{{ url_for('cargue_individual') }}">
+        <a class="opcion-carga" href="{{ url_for('cargue_individual') }}" title="Cargar y consultar facturas una por una">
             <span class="opcion-icono individual-icono" aria-hidden="true">
                 <svg viewBox="0 0 48 48" fill="none">
                     <path d="M14 5.75h13l9 9V40a2.25 2.25 0 0 1-2.25 2.25h-19.5A2.25 2.25 0 0 1 12 40V8a2.25 2.25 0 0 1 2-2.25Z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
@@ -49,7 +54,7 @@
             <span class="opcion-titulo">Cargue individual</span>
         </a>
 
-        <a class="opcion-carga" href="{{ url_for('cargue_masivo') }}">
+        <a class="opcion-carga" href="{{ url_for('cargue_masivo') }}" title="Cargar una carpeta y procesar varias facturas">
             <span class="opcion-icono masivo-icono" aria-hidden="true">
                 <svg viewBox="0 0 48 48" fill="none">
                     <path d="M8 13.25h12l3.5 4H40v20.5A2.25 2.25 0 0 1 37.75 40h-27.5A2.25 2.25 0 0 1 8 37.75v-22.25A2.25 2.25 0 0 1 10.25 13.25Z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
@@ -57,6 +62,16 @@
                 </svg>
             </span>
             <span class="opcion-titulo">Cargue masivo</span>
+        </a>
+
+        <a class="opcion-carga" href="{{ url_for('historial') }}" title="Consultar, descargar o borrar facturas guardadas">
+            <span class="opcion-icono historial-icono" aria-hidden="true">
+                <svg viewBox="0 0 48 48" fill="none">
+                    <path d="M10 10h28v29H10zM16 17h16M16 23h16M16 29h10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 15v23a3 3 0 0 0 3 3h23" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </span>
+            <span class="opcion-titulo">Historial</span>
         </a>
     </div>
 </main>

@@ -58,6 +58,7 @@ def evitar_cache_historial_facturas(response):
         or request.path.startswith("/factura/")
         or request.path == "/api/facturas"
         or request.path == "/cargue-masivo"
+        or request.path == "/historial"
     ):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -77,15 +78,20 @@ def index():
 
 @app.route("/individual")
 def cargue_individual():
-    return render_template(
-        "index.html",
-        facturas=obtener_todas()
-    )
+    return render_template("index.html")
 
 
 @app.route("/cargue-masivo")
 def cargue_masivo():
     return render_template("cargue_masivo.html")
+
+
+@app.route("/historial")
+def historial():
+    return render_template(
+        "historial.html",
+        facturas=obtener_todas()
+    )
 
 
 @app.route("/factura/<int:factura_id>")
@@ -98,7 +104,6 @@ def detalle_factura(factura_id):
 
     return render_template(
         "index.html",
-        facturas=obtener_todas(),
         factura_seleccionada=factura
     )
 

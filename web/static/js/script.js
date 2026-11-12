@@ -2,10 +2,14 @@
 const input     = document.getElementById('inputArchivo');
 const uploadBox = document.querySelector('.upload-box');
 const btnSubir  = uploadBox.querySelector('.btn-subir');
+const iconoSubir = btnSubir.querySelector('.icono-subir');
+const iconoProcesar = btnSubir.querySelector('.icono-procesar');
 const btnTema = document.getElementById('btnTema');
 const iconoTema = document.getElementById('iconoTema');
-const btnP      = document.getElementById('btnProcesar');
 const resultado = document.getElementById('resultado');
+const avisoHistorialAgregado = document.getElementById('avisoHistorialAgregado');
+const nombreArchivoAgregado = document.getElementById('nombreArchivoAgregado');
+const textoAvisoHistorialAgregado = document.getElementById('textoAvisoHistorialAgregado');
 const previewC  = document.getElementById('preview-container');
 const previewI  = document.getElementById('preview-img');
 const previewStatus = document.getElementById('preview-status');
@@ -18,7 +22,6 @@ const visorSalidaFactura = document.getElementById('visorSalidaFactura');
 const tituloSalidaFactura = document.getElementById('tituloSalidaFactura');
 const contenidoSalidaFactura = document.getElementById('contenidoSalidaFactura');
 const descargarJsonFactura = document.getElementById('descargarJsonFactura');
-const btnBorrarHistorial = document.getElementById('btnBorrarHistorial');
 const miniaturaFactura = document.querySelector('.miniatura-factura');
 const panelLista = document.querySelector('.panel-lista');
 const panelDetalle = document.querySelector('.panel-detalle');
@@ -27,51 +30,168 @@ let previewUrl = null;
 let documentUrl = null;
 let selectedDocumentIsPdf = false;
 let viewerRequestId = 0;
-const iconoProcesarSrc = btnP.querySelector('img').getAttribute('src');
 const textoBtnSubir = btnSubir.textContent.trim();
+let selectorBloqueado = false;
+let selectorEsperandoArchivos = false;
+let seleccionCambiadaDuranteExplorador = false;
+let accionSelector = 'subir';
+
+function mostrarAvisoHistorial(nombres) {
+    const archivos = Array.isArray(nombres)
+        ? nombres.filter(nombre => typeof nombre === 'string' && nombre.trim())
+        : [];
+    nombreArchivoAgregado.textContent = archivos.join(', ');
+    textoAvisoHistorialAgregado.textContent = archivos.length > 1
+        ? 'Se agregaron al historial con éxito.'
+        : 'Se agregó al historial con éxito.';
+    avisoHistorialAgregado.hidden = archivos.length === 0;
+}
+
+const archivosAgregadosPendientes = sessionStorage.getItem('archivosAgregadosHistorial');
+if (archivosAgregadosPendientes) {
+    try {
+        mostrarAvisoHistorial(JSON.parse(archivosAgregadosPendientes));
+    } catch {
+        mostrarAvisoHistorial([]);
+    } finally {
+        sessionStorage.removeItem('archivosAgregadosHistorial');
+    }
+}
+
+function bloquearSelector(bloqueado) {
+    selectorBloqueado = bloqueado;
+    btnSubir.classList.toggle('bloqueado', bloqueado);
+    btnSubir.setAttribute('aria-disabled', String(bloqueado));
+}
 
 function mostrarEstadoCarga(estado, texto) {
-    btnSubir.classList.remove('estado-subiendo', 'estado-cargado', 'estado-error');
-    btnSubir.setAttribute('aria-busy', String(estado === 'subiendo'));
+    accionSelector = estado === 'subiendo'
+        ? 'abriendo'
+        : estado === 'cargado'
+            ? 'procesar'
+            : estado === 'procesando'
+                ? 'procesando'
+                : 'subir';
+    btnSubir.classList.remove('estado-subiendo', 'estado-cargado', 'estado-error', 'listo-para-procesar');
+    btnSubir.setAttribute('aria-busy', String(accionSelector === 'abriendo' || accionSelector === 'procesando'));
+    bloquearSelector(accionSelector === 'procesando');
 
-    if (!estado) {
-        btnSubir.replaceChildren(Object.assign(document.createElement('span'), {
-            textContent: textoBtnSubir
-        }));
+    if (accionSelector === 'subir' || accionSelector === 'procesar') {
+        const icono = accionSelector === 'procesar' ? iconoProcesar : iconoSubir;
+        const iconoClonado = icono.cloneNode(true);
+        iconoClonado.hidden = false;
+        const etiqueta = document.createElement('span');
+        etiqueta.textContent = accionSelector === 'procesar' ? texto : textoBtnSubir;
+        btnSubir.replaceChildren(iconoClonado, etiqueta);
+        btnSubir.classList.toggle('listo-para-procesar', accionSelector === 'procesar');
+        btnSubir.title = accionSelector === 'procesar'
+            ? 'Leer los documentos seleccionados'
+            : 'Seleccionar uno o varios documentos para cargar';
         return;
     }
 
-    btnSubir.classList.add(`estado-${estado}`);
     const contenido = document.createElement('span');
     contenido.className = 'spinner-accion';
-    if (estado === 'subiendo') {
+    if (accionSelector === 'abriendo' || accionSelector === 'procesando') {
         const spinner = document.createElement('span');
         spinner.className = 'spinner-circular spinner-circular-pequeno';
         spinner.setAttribute('aria-hidden', 'true');
         contenido.append(spinner);
-    } else if (estado === 'cargado') {
-        const check = document.createElement('span');
-        check.setAttribute('aria-hidden', 'true');
-        check.textContent = '✓';
-        contenido.append(check);
     }
     const etiqueta = document.createElement('span');
     etiqueta.textContent = texto;
     contenido.append(etiqueta);
     btnSubir.replaceChildren(contenido);
+    if (accionSelector === 'abriendo') {
+        btnSubir.classList.add('estado-subiendo');
+    }
+    btnSubir.title = texto;
 }
 
-btnSubir.addEventListener('click', () => {
+function mostrarEstadoLeido(alTerminar) {
+    accionSelector = 'leido';
+    bloquearSelector(true);
+    btnSubir.classList.remove('estado-subiendo', 'estado-cargado', 'estado-error', 'listo-para-procesar');
+    btnSubir.classList.add('estado-leido');
+    btnSubir.setAttribute('aria-busy', 'false');
+    btnSubir.title = 'Lectura completada';
+
+    const icono = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icono.setAttribute('viewBox', '0 0 24 24');
+    icono.setAttribute('fill', 'none');
+    icono.setAttribute('class', 'icono-leido');
+    icono.setAttribute('aria-hidden', 'true');
+    const marca = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    marca.setAttribute('d', 'm5 12.5 4.5 4.5L19 7');
+    marca.setAttribute('stroke', 'currentColor');
+    marca.setAttribute('stroke-width', '2.5');
+    marca.setAttribute('stroke-linecap', 'round');
+    marca.setAttribute('stroke-linejoin', 'round');
+    icono.append(marca);
+
+    const etiqueta = document.createElement('span');
+    etiqueta.textContent = 'Leído';
+    btnSubir.replaceChildren(icono, etiqueta);
+    window.setTimeout(() => {
+        mostrarEstadoCarga('', textoBtnSubir);
+        bloquearSelector(false);
+        if (alTerminar) alTerminar();
+    }, 1000);
+}
+
+btnSubir.addEventListener('click', event => {
+    if (selectorBloqueado) {
+        event.preventDefault();
+        return;
+    }
+    if (accionSelector === 'procesar') {
+        event.preventDefault();
+        procesarArchivos();
+        return;
+    }
+    if (accionSelector !== 'subir') {
+        event.preventDefault();
+        return;
+    }
+    selectorEsperandoArchivos = true;
+    seleccionCambiadaDuranteExplorador = false;
     mostrarEstadoCarga('subiendo', 'Cargando');
+});
+
+btnSubir.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    if (selectorBloqueado) return;
+    if (accionSelector === 'procesar') {
+        procesarArchivos();
+        return;
+    }
+    if (accionSelector === 'subir') {
+        selectorEsperandoArchivos = true;
+        seleccionCambiadaDuranteExplorador = false;
+        mostrarEstadoCarga('subiendo', 'Cargando');
+        input.click();
+    }
+});
+
+window.addEventListener('focus', () => {
+    if (!selectorEsperandoArchivos) return;
+
+    window.setTimeout(() => {
+        if (!selectorEsperandoArchivos) return;
+        selectorEsperandoArchivos = false;
+        if (!seleccionCambiadaDuranteExplorador) {
+            mostrarEstadoCarga('', textoBtnSubir);
+            bloquearSelector(false);
+        }
+        seleccionCambiadaDuranteExplorador = false;
+    }, 0);
 });
 
 function enviarArchivosConProgreso(formData) {
     return new Promise((resolve, reject) => {
         const solicitud = new XMLHttpRequest();
         solicitud.open('POST', '/api/procesar-lote');
-        solicitud.upload.addEventListener('load', () => {
-            mostrarEstadoCarga('cargado', 'Listo');
-        });
         solicitud.addEventListener('load', () => {
             let json;
             try {
@@ -159,43 +279,20 @@ if (visorSalidaFactura && panelDetalle) {
 }
 
 function mostrarEsqueletosPaneles() {
-    const listaFacturas = panelLista.querySelector('.lista-facturas');
     const contenidoDetalleOriginal = document.createDocumentFragment();
-    const estadoVacio = listaFacturas.querySelector('.vacio');
-    const estabaVacioOculto = estadoVacio?.hidden ?? false;
-    const tarjetaEsqueleto = document.createElement('div');
     let restaurado = false;
 
     while (panelDetalle.firstChild) {
         contenidoDetalleOriginal.append(panelDetalle.firstChild);
     }
 
-    if (estadoVacio) {
-        estadoVacio.hidden = true;
-    }
-
-    panelLista.setAttribute('aria-busy', 'true');
     panelDetalle.setAttribute('aria-busy', 'true');
-    tarjetaEsqueleto.className = 'tarjeta-factura tarjeta-cargando tarjeta-factura-esqueleto';
-    tarjetaEsqueleto.setAttribute('aria-hidden', 'true');
-    tarjetaEsqueleto.innerHTML = `
-        <span class="skeleton-line esqueleto-tarjeta-tipo"></span>
-        <span class="skeleton-line esqueleto-tarjeta-proveedor"></span>
-        <span class="skeleton-line esqueleto-tarjeta-monto"></span>
-        <span class="skeleton-line esqueleto-tarjeta-fecha"></span>
-    `;
-    listaFacturas.append(tarjetaEsqueleto);
     panelDetalle.replaceChildren(esqueletoDetalle.content.cloneNode(true));
 
     return () => {
         if (restaurado) return;
         restaurado = true;
-        tarjetaEsqueleto.remove();
-        if (estadoVacio) {
-            estadoVacio.hidden = estabaVacioOculto;
-        }
         panelDetalle.replaceChildren(contenidoDetalleOriginal);
-        panelLista.removeAttribute('aria-busy');
         panelDetalle.removeAttribute('aria-busy');
     };
 }
@@ -203,18 +300,6 @@ function mostrarEsqueletosPaneles() {
 function finalizarCargaResultado(clase) {
     resultado.className = `resultado ${clase}`;
     resultado.setAttribute('aria-busy', 'false');
-}
-
-function restaurarBotonProcesar(texto) {
-    const icono = document.createElement('img');
-    icono.src = iconoProcesarSrc;
-    icono.alt = '';
-    icono.setAttribute('aria-hidden', 'true');
-
-    const etiqueta = document.createElement('span');
-    etiqueta.textContent = texto;
-    btnP.replaceChildren(icono, etiqueta);
-    btnP.disabled = false;
 }
 
 function esNavegacionNormal(event, enlace) {
@@ -335,32 +420,6 @@ document.addEventListener('drop', event => {
     input.files = transferencia.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
 });
-
-if (btnBorrarHistorial) {
-    btnBorrarHistorial.addEventListener('click', async () => {
-        if (!window.confirm('¿Seguro que quieres borrar todo el historial? Esta acción no se puede deshacer.')) {
-            return;
-        }
-
-        const etiquetaOriginal = btnBorrarHistorial.textContent.trim();
-        mostrarBotonCargando(btnBorrarHistorial, 'Borrando...');
-
-        try {
-            const res = await fetch('/api/facturas', { method: 'DELETE' });
-            const json = await res.json();
-
-            if (!res.ok || !json.ok) {
-                throw new Error(json.error || 'No se pudo borrar el historial.');
-            }
-
-            window.location.assign('/individual');
-        } catch (error) {
-            window.alert(error.message || 'No se pudo conectar al servidor.');
-            btnBorrarHistorial.replaceChildren(document.createTextNode(etiquetaOriginal));
-            btnBorrarHistorial.disabled = false;
-        }
-    });
-}
 
 function limpiarVistaPrevia() {
     previewI.removeAttribute('src');
@@ -505,6 +564,7 @@ previewI.addEventListener('keydown', event => {
 previewI.tabIndex = 0;
 previewI.setAttribute('role', 'button');
 previewI.setAttribute('aria-label', 'Abrir documento completo');
+previewI.title = 'Ampliar la vista previa del documento';
 
 document.getElementById('cerrar-visor').addEventListener('click', cerrarVistaCompleta);
 visorDocumento.addEventListener('click', event => {
@@ -515,30 +575,30 @@ visorDocumento.addEventListener('click', event => {
 
 // Muestra una vista previa de la imagen o de la primera página del PDF.
 input.addEventListener('change', () => {
+    if (selectorEsperandoArchivos) {
+        seleccionCambiadaDuranteExplorador = true;
+        selectorEsperandoArchivos = false;
+    }
     const archivos = Array.from(input.files);
     const file = archivos[0];
-    mostrarEstadoCarga('', textoBtnSubir);
-    btnP.disabled = false;
     limpiarVistaPrevia();
+    mostrarAvisoHistorial([]);
     if (!file) {
-        btnP.style.display = 'none';
+        mostrarEstadoCarga('', textoBtnSubir);
         return;
     }
 
     if (archivos.length > 1) {
-        mostrarEstadoCarga('cargado', 'Listo');
         selectedDocumentIsPdf = false;
         previewC.style.display = 'block';
         previewStatus.textContent = `${archivos.length} documentos seleccionados. Se procesarán individualmente.`;
         previewStatus.style.display = 'block';
         previewI.style.display = 'none';
-        btnP.querySelector('span').textContent = `Procesar ${archivos.length} documentos`;
-        btnP.style.display = 'block';
+        mostrarEstadoCarga('cargado', `Procesar ${archivos.length} documentos`);
         resultado.style.display = 'none';
         return;
     }
 
-    btnP.querySelector('span').textContent = 'Procesar factura';
     if (file.type.startsWith('image/')) {
         selectedDocumentIsPdf = false;
         documentUrl = URL.createObjectURL(file);
@@ -554,24 +614,22 @@ input.addEventListener('change', () => {
         previewStatus.style.display = 'none';
     } else {
         limpiarVistaPrevia();
-        btnP.style.display = 'none';
+        mostrarEstadoCarga('', textoBtnSubir);
         return;
     }
 
-    mostrarEstadoCarga('cargado', 'Listo');
-    btnP.style.display = 'block';
+    mostrarEstadoCarga('cargado', 'Procesar factura');
     resultado.style.display = 'none';
 });
 
-// Envía el archivo a la API
-btnP.addEventListener('click', async () => {
+async function procesarArchivos() {
     const archivos = Array.from(input.files);
     if (!archivos.length) return;
 
-    const textoBoton = btnP.querySelector('span').textContent;
-    btnP.style.display = 'block';
-    mostrarBotonCargando(btnP, 'Procesando...');
-    mostrarEstadoCarga('subiendo', 'Cargando');
+    const textoAccion = archivos.length > 1
+        ? `Procesar ${archivos.length} documentos`
+        : 'Procesar factura';
+    mostrarEstadoCarga('procesando', 'Procesando...');
     resultado.replaceChildren();
     resultado.className = 'resultado';
     resultado.setAttribute('aria-busy', 'false');
@@ -589,6 +647,9 @@ btnP.addEventListener('click', async () => {
 
         if (json.fallidos === 0) {
             resultado.style.display = 'none';
+            const nombresAgregados = json.resultados
+                .filter(item => item.ok)
+                .map(item => item.archivo);
             const ultimoResultado = json.resultados[json.resultados.length - 1];
             const facturaReciente = ultimoResultado && ultimoResultado.datos
                 ? ultimoResultado.datos.factura_id
@@ -596,11 +657,15 @@ btnP.addEventListener('click', async () => {
             if (!Number.isInteger(facturaReciente)) {
                 throw new Error('El procesamiento terminó, pero el servidor no devolvió el identificador de la factura.');
             }
+            input.value = '';
             limpiarVistaPrevia();
-            window.setTimeout(() => {
+            sessionStorage.setItem('archivosAgregadosHistorial', JSON.stringify(nombresAgregados));
+            mostrarAvisoHistorial(nombresAgregados);
+            mostrarEstadoLeido(() => {
                 window.location.assign(`/factura/${facturaReciente}`);
-            }, 500);
+            });
         } else {
+            bloquearSelector(false);
             restaurarPaneles();
             resultado.replaceChildren();
             const resumen = document.createElement('strong');
@@ -616,29 +681,31 @@ btnP.addEventListener('click', async () => {
             finalizarCargaResultado(json.exitosos ? 'advertencia' : 'error');
             resultado.style.display = 'block';
             if (json.exitosos) {
-                restaurarBotonProcesar(textoBoton);
-                btnP.disabled = true;
+                mostrarAvisoHistorial(json.resultados
+                    .filter(item => item.ok)
+                    .map(item => item.archivo));
+                input.value = '';
+                limpiarVistaPrevia();
+                mostrarEstadoLeido();
                 const actualizar = document.createElement('button');
                 actualizar.type = 'button';
                 actualizar.textContent = 'Actualizar historial';
+                actualizar.title = 'Recargar la página para mostrar las facturas procesadas';
                 actualizar.addEventListener('click', () => {
                     mostrarBotonCargando(actualizar, 'Actualizando...');
                     location.reload();
                 });
                 resultado.appendChild(actualizar);
             } else {
-                restaurarBotonProcesar(textoBoton);
+                mostrarEstadoCarga('cargado', textoAccion);
             }
-            btnP.style.display = 'block';
         }
     } catch (e) {
-        mostrarEstadoCarga('error', 'Error al cargar');
         restaurarPaneles();
         finalizarCargaResultado('error');
         resultado.textContent =
             e.message || 'No se pudo conectar al servidor. Verifica tu conexión e inténtalo de nuevo.';
         resultado.style.display = 'block';
-        restaurarBotonProcesar(textoBoton);
-        btnP.style.display = 'block';
+        mostrarEstadoCarga('cargado', textoAccion);
     }
-});
+}

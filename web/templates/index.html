@@ -9,19 +9,23 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-27') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-46') }}">
 </head>
-<body>
+<body class="pantalla-individual">
 
 <h1>
-    <img
-        class="marca-icono"
-        src="{{ url_for('static', filename='img/factura.png') }}"
-        alt=""
-        aria-hidden="true"
-    >
-    <span>Facturas</span>
-    <a class="volver-modos" href="{{ url_for('index') }}">Volver</a>
+    <div class="marca-navegacion">
+        <a class="enlace-inicio" href="{{ url_for('index') }}" aria-label="Ir a Inicio" title="Ir a Inicio">
+            <img class="marca-icono" src="{{ url_for('static', filename='img/factura.png') }}" alt="" aria-hidden="true">
+        </a>
+        <nav class="navegacion-principal" aria-label="Navegación principal">
+            <a href="{{ url_for('index') }}">Inicio</a>
+            <a href="{{ url_for('cargue_individual') }}" aria-current="page">Cargue Individual</a>
+            <a href="{{ url_for('cargue_masivo') }}">Cargue masivo</a>
+            <a href="{{ url_for('historial') }}">Historial</a>
+        </nav>
+    </div>
+    <span class="titulo-encabezado">Cargue individual</span>
     <button type="button" id="btnTema" class="btn-tema" aria-pressed="false" aria-label="Modo oscuro" title="Modo oscuro">
         <img
             id="iconoTema"
@@ -37,7 +41,28 @@
 <main class="layout">
     <aside class="barra-lateral">
         <section class="upload-box" aria-label="Subir factura">
-            <label for="inputArchivo" class="btn-subir" aria-live="polite" aria-busy="false">
+            <div class="individual-titulo">
+                <h2>Prepara tu factura</h2>
+            </div>
+            <label
+                for="inputArchivo"
+                class="btn-subir"
+                id="btnSubir"
+                role="button"
+                tabindex="0"
+                aria-live="polite"
+                aria-busy="false"
+                aria-disabled="false"
+                title="Seleccionar uno o varios documentos para cargar"
+            >
+                <svg class="icono-subir" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+                    <path d="M24 31V10m0 0-7 7m7-7 7 7M10 28v8.5A2.5 2.5 0 0 0 12.5 39h23a2.5 2.5 0 0 0 2.5-2.5V28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <svg class="icono-procesar" viewBox="0 0 24 24" fill="none" aria-hidden="true" hidden>
+                    <path d="M7 3.75h7l4 4V20a.75.75 0 0 1-.75.75h-9.5A.75.75 0 0 1 7 20V3.75Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                    <path d="M14 4v4h4M10 12h5m-5 3h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M17.5 16.5a2.25 2.25 0 1 0-4.5 0 2.25 2.25 0 0 0 4.5 0Zm0 0 1.75 1.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                </svg>
                 <span>Subir</span>
             </label>
             <input type="file" id="inputArchivo" accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" multiple style="display:none">
@@ -49,36 +74,13 @@
                 <img id="preview-img" src="" alt="Vista previa">
                 <p id="preview-status" style="display:none"></p>
             </div>
-            <button id="btnProcesar" class="btn-procesar" style="display:none">
-                <img src="{{ url_for('static', filename='img/proceso.png') }}" alt="" aria-hidden="true">
-                <span>Procesar documentos</span>
-            </button>
             <div id="resultado" class="resultado" style="display:none" aria-live="polite" aria-busy="false"></div>
         </section>
+        <p id="avisoHistorialAgregado" class="aviso-historial-agregado" role="status" hidden>
+            <strong id="nombreArchivoAgregado"></strong>
+            <span id="textoAvisoHistorialAgregado">Se agregó al historial con éxito.</span>
+        </p>
 
-        <section class="panel-lista" aria-label="Historial de facturas">
-            <div class="encabezado-historial">
-                <h2>Historial <span>({{ facturas|length }})</span></h2>
-                {% if facturas %}
-                <button type="button" id="btnBorrarHistorial" class="btn-borrar">
-                    Borrar
-                </button>
-                {% endif %}
-            </div>
-            <div class="lista-facturas">
-                {% for f in facturas %}
-                <a href="/factura/{{ f['id'] }}" class="tarjeta-factura {% if factura_seleccionada and factura_seleccionada['id'] == f['id'] %}seleccionada{% endif %}">
-                    <span class="tipo-badge">{{ f['tipo_pdf'] }}</span>
-                    <strong>{{ f['proveedor'] or 'Proveedor desconocido' }}</strong>
-                    <span class="monto">$ {{ f['total'] or 'Sin total' }}</span>
-                    <span class="fecha-small">{{ f['fecha'] or 'Sin fecha' }}</span>
-                </a>
-                {% endfor %}
-                {% if not facturas %}
-                <p class="vacio">Aún no hay facturas.<br>¡Sube la primera!</p>
-                {% endif %}
-            </div>
-        </section>
     </aside>
 
     <section class="panel-detalle" aria-label="Detalle de factura">
@@ -98,6 +100,7 @@
                     data-factura-id="{{ factura_seleccionada['id'] }}"
                     data-nombre="{{ factura_seleccionada['nombre_archivo'] }}"
                     aria-label="Abrir documento original"
+                    title="Ampliar el documento original"
                 >
                     <img
                         src="/api/facturas/{{ factura_seleccionada['id'] }}/miniatura"
@@ -138,9 +141,9 @@
                             <td>{{ factura_seleccionada['numero_autorizacion'] or '—' }}</td>
                             <td>{{ factura_seleccionada['punto_recaudo'] or '—' }}</td>
                             <td>{{ factura_seleccionada['banco'] or '—' }}</td>
-                            <td><button type="button" class="btn-ver-salida" data-tipo-salida="texto">Ver</button></td>
+                            <td><button type="button" class="btn-ver-salida" data-tipo-salida="texto" title="Ver el texto extraído de la factura">Ver</button></td>
                             <td>
-                                <button type="button" class="btn-ver-salida" data-tipo-salida="json">Ver</button>
+                                <button type="button" class="btn-ver-salida" data-tipo-salida="json" title="Ver los datos de la factura en formato JSON">Ver</button>
                             </td>
                         </tr>
                     </tbody>
@@ -172,7 +175,7 @@
                     aria-hidden="true"
                 >
                 <h2>Tu espacio de trabajo</h2>
-                <p>Selecciona una factura del historial para ver sus datos, o sube un documento para empezar.</p>
+                <p>Sube un documento para consultar los datos extraídos.</p>
             </div>
         {% endif %}
     </section>
@@ -221,9 +224,10 @@
                 class="btn-descargar-json-tabla"
                 id="descargarJsonFactura"
                 href="/api/facturas/{{ factura_seleccionada['id'] if factura_seleccionada else '' }}/json"
+                title="Descargar el JSON de esta factura"
                 hidden
             >Descargar JSON</a>
-            <button type="button" class="cerrar-visor" id="cerrarSalidaFactura">Cerrar</button>
+            <button type="button" class="cerrar-visor" id="cerrarSalidaFactura" title="Cerrar esta ventana">Cerrar</button>
         </div>
     </div>
     <pre class="visor-salida-contenido" id="contenidoSalidaFactura"></pre>
@@ -232,7 +236,7 @@
 <dialog id="visor-documento" class="visor-documento" aria-label="Vista completa del documento">
     <div class="visor-encabezado">
         <strong id="visor-titulo">Vista previa</strong>
-        <button type="button" id="cerrar-visor" class="cerrar-visor" aria-label="Cerrar vista previa">Cerrar</button>
+        <button type="button" id="cerrar-visor" class="cerrar-visor" aria-label="Cerrar vista previa" title="Cerrar la vista previa">Cerrar</button>
     </div>
     <div class="visor-contenido">
         <img id="visor-imagen" alt="Documento completo" style="display:none">
@@ -241,6 +245,6 @@
     </div>
 </dialog>
 
-<script src="{{ url_for('static', filename='js/script.js', v='20261112-3') }}"></script>
+<script src="{{ url_for('static', filename='js/script.js', v='20261112-11') }}"></script>
 </body>
 </html>

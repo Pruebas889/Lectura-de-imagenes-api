@@ -9,18 +9,22 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-27') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-46') }}">
 </head>
 <body class="pantalla-masiva">
 <h1>
-    <img
-        class="marca-icono"
-        src="{{ url_for('static', filename='img/factura.png') }}"
-        alt=""
-        aria-hidden="true"
-    >
-    <span>Cargue masivo</span>
-    <a class="volver-modos" id="volverModosMasivo" href="{{ url_for('index') }}">Volver</a>
+    <div class="marca-navegacion">
+        <a class="enlace-inicio" id="enlaceInicioMasivo" href="{{ url_for('index') }}" aria-label="Ir a Inicio" title="Ir a Inicio">
+            <img class="marca-icono" src="{{ url_for('static', filename='img/factura.png') }}" alt="" aria-hidden="true">
+        </a>
+        <nav class="navegacion-principal" aria-label="Navegación principal">
+            <a href="{{ url_for('index') }}">Inicio</a>
+            <a href="{{ url_for('cargue_individual') }}">Cargue Individual</a>
+            <a href="{{ url_for('cargue_masivo') }}" aria-current="page">Cargue masivo</a>
+            <a href="{{ url_for('historial') }}">Historial</a>
+        </nav>
+    </div>
+    <span class="titulo-encabezado">Cargue masivo</span>
     <button type="button" id="btnTema" class="btn-tema" aria-pressed="false" aria-label="Modo oscuro" title="Modo oscuro">
         <img
             id="iconoTema"
@@ -38,7 +42,7 @@
         <div>
             <h2>Prepara tus facturas</h2>
             <div class="acciones-carga-masiva">
-                <button class="btn-seleccionar-masivo btn-seleccionar btn-seleccionar-carpeta" id="btnSeleccionarCarpeta" type="button" aria-live="polite" aria-busy="false" aria-label="Subir">
+                <button class="btn-seleccionar-masivo btn-seleccionar btn-seleccionar-carpeta" id="btnSeleccionarCarpeta" type="button" aria-live="polite" aria-busy="false" aria-label="Subir" title="Seleccionar una carpeta de facturas">
                     <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
                         <path d="M24 31V10m0 0-7 7m7-7 7 7M10 28v8.5A2.5 2.5 0 0 0 12.5 39h23a2.5 2.5 0 0 0 2.5-2.5V28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
@@ -65,18 +69,15 @@
             multiple
             hidden
         >
-        <p id="textoSeleccionMasiva" class="texto-seleccion-masiva"></p>
-        <div class="progreso-masivo" id="progresoMasivo" hidden aria-live="polite">
-            <span id="cantidadProgresoMasivo" aria-label="Archivos procesados">0 / 0</span>
-        </div>
         <div class="encabezado-cola">
             <div>
                 <h3>Archivos del lote</h3>
                 <p class="duracion-masiva" id="duracionMasiva" hidden></p>
                 <p class="temporizador-masivo">Tiempo: <time id="temporizadorMasivo">00:00:000</time></p>
+                <p id="textoSeleccionMasiva" class="texto-seleccion-masiva"></p>
             </div>
             <div class="acciones-cola-masiva">
-                <span class="contador-masivo" id="contadorMasivo">0 archivos</span>
+                <span class="contador-masivo" id="contadorMasivo" aria-live="polite" aria-label="0 archivos seleccionados">0 archivos</span>
                 <button
                     class="btn-seleccionar-masivo btn-descargar-json-masivo"
                     id="btnDescargarJsonMasivo"
@@ -125,23 +126,24 @@
     </section>
 
     <div class="pie-masivo">
-        <button class="btn-procesar-masivo" id="btnProcesarMasivo" type="button" disabled>Leer</button>
+        <button class="btn-reestablecer" id="btnReestablecerMasivo" type="button" title="Descartar los archivos cargados y comenzar de nuevo" disabled>Reestablecer</button>
+        <button class="btn-procesar-masivo" id="btnProcesarMasivo" type="button" title="Leer los documentos de la cola" disabled>Leer</button>
     </div>
 </main>
 
 <dialog class="confirmar-salida-masiva" id="confirmarSalidaMasiva" aria-labelledby="tituloConfirmarSalida">
-    <h2 id="tituloConfirmarSalida">¿Salir del cargue masivo?</h2>
-    <p>Si sales, se reiniciarán los datos del lote y tendrás que volver a cargar la carpeta.</p>
+    <h2 id="tituloConfirmarSalida">¿Descartar el lote actual?</h2>
+    <p>Si continúas, se descartarán los archivos cargados y tendrás que volver a seleccionarlos.</p>
     <div class="acciones-confirmar-salida">
-        <button type="button" class="btn-cancelar-salida" id="cancelarSalidaMasiva">Cancelar</button>
-        <button type="button" class="btn-aceptar-salida" id="aceptarSalidaMasiva">Aceptar</button>
+        <button type="button" class="btn-cancelar-salida" id="cancelarSalidaMasiva" title="Conservar el lote y permanecer en esta pantalla">Cancelar</button>
+        <button type="button" class="btn-aceptar-salida" id="aceptarSalidaMasiva" title="Confirmar y descartar el lote">Aceptar</button>
     </div>
 </dialog>
 
 <dialog class="visor-salida-factura" id="visorSalidaMasiva" aria-labelledby="tituloSalidaMasiva">
     <div class="visor-encabezado">
         <strong id="tituloSalidaMasiva">Resultado de factura</strong>
-        <button type="button" class="cerrar-visor" id="cerrarSalidaMasiva">Cerrar</button>
+        <button type="button" class="cerrar-visor" id="cerrarSalidaMasiva" title="Cerrar esta ventana">Cerrar</button>
     </div>
     <pre class="visor-salida-contenido" id="contenidoSalidaMasiva"></pre>
 </dialog>
@@ -166,6 +168,6 @@
         actualizarTema();
     });
 </script>
-<script src="{{ url_for('static', filename='js/masivo.js', v='20261112-22') }}" defer></script>
+<script src="{{ url_for('static', filename='js/masivo.js', v='20261112-28') }}" defer></script>
 </body>
 </html>
