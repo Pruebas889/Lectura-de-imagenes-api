@@ -4,60 +4,243 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visor de Facturas</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>
+        document.documentElement.dataset.theme =
+            localStorage.getItem('tema-facturas') ||
+            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-27') }}">
 </head>
 <body>
 
-<h1>📄 Facturas</h1>
+<h1>
+    <img
+        class="marca-icono"
+        src="{{ url_for('static', filename='img/factura.png') }}"
+        alt=""
+        aria-hidden="true"
+    >
+    <span>Facturas</span>
+    <a class="volver-modos" href="{{ url_for('index') }}">Volver</a>
+    <button type="button" id="btnTema" class="btn-tema" aria-pressed="false" aria-label="Modo oscuro" title="Modo oscuro">
+        <img
+            id="iconoTema"
+            src="{{ url_for('static', filename='img/modo-oscuro.png') }}"
+            data-light="{{ url_for('static', filename='img/modo-oscuro.png') }}"
+            data-dark="{{ url_for('static', filename='img/modo-claro.png') }}"
+            alt=""
+            aria-hidden="true"
+        >
+    </button>
+</h1>
 
-<!-- ZONA DE SUBIDA -->
-<div class="upload-box">
-    <label for="inputArchivo" class="btn-subir">
-        📷 Tomar o subir foto
-    </label>
-    <input type="file" id="inputArchivo" accept="image/*,application/pdf" capture="environment" style="display:none">
-    <div id="preview-container" style="display:none">
-        <img id="preview-img" src="" alt="Vista previa">
-    </div>
-    <button id="btnProcesar" class="btn-procesar" style="display:none">⚡ Procesar factura</button>
-    <div id="resultado" class="resultado" style="display:none"></div>
-    <div id="spinner" class="spinner" style="display:none">Analizando con IA...</div>
-</div>
+<main class="layout">
+    <aside class="barra-lateral">
+        <section class="upload-box" aria-label="Subir factura">
+            <label for="inputArchivo" class="btn-subir" aria-live="polite" aria-busy="false">
+                <span>Subir</span>
+            </label>
+            <input type="file" id="inputArchivo" accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" multiple style="display:none">
+            <div class="drop-hint" aria-live="polite">
+                <span class="drop-hint-normal">Arrastrar</span>
+                <span class="drop-hint-activo">Soltar aquí</span>
+            </div>
+            <div id="preview-container" style="display:none">
+                <img id="preview-img" src="" alt="Vista previa">
+                <p id="preview-status" style="display:none"></p>
+            </div>
+            <button id="btnProcesar" class="btn-procesar" style="display:none">
+                <img src="{{ url_for('static', filename='img/proceso.png') }}" alt="" aria-hidden="true">
+                <span>Procesar documentos</span>
+            </button>
+            <div id="resultado" class="resultado" style="display:none" aria-live="polite" aria-busy="false"></div>
+        </section>
 
-<!-- LISTA DE FACTURAS -->
-<div class="contenedor">
-    <div class="panel-lista">
-        <h2>Historial ({{ facturas|length }})</h2>
-        {% for f in facturas %}
-        <a href="/factura/{{ f['id'] }}" class="tarjeta-factura {% if factura_seleccionada and factura_seleccionada['id'] == f['id'] %}seleccionada{% endif %}">
-            <span class="tipo-badge">{{ f['tipo_pdf'] }}</span>
-            <strong>{{ f['proveedor'] or 'Proveedor desconocido' }}</strong><br>
-            <span class="monto">$ {{ f['total'] or 'Sin total' }}</span><br>
-            <span class="fecha-small">{{ f['fecha'] or 'Sin fecha' }}</span>
-        </a>
-        {% endfor %}
-        {% if not facturas %}
-        <p class="vacio">Aún no hay facturas.<br>¡Sube la primera!</p>
+        <section class="panel-lista" aria-label="Historial de facturas">
+            <div class="encabezado-historial">
+                <h2>Historial <span>({{ facturas|length }})</span></h2>
+                {% if facturas %}
+                <button type="button" id="btnBorrarHistorial" class="btn-borrar">
+                    Borrar
+                </button>
+                {% endif %}
+            </div>
+            <div class="lista-facturas">
+                {% for f in facturas %}
+                <a href="/factura/{{ f['id'] }}" class="tarjeta-factura {% if factura_seleccionada and factura_seleccionada['id'] == f['id'] %}seleccionada{% endif %}">
+                    <span class="tipo-badge">{{ f['tipo_pdf'] }}</span>
+                    <strong>{{ f['proveedor'] or 'Proveedor desconocido' }}</strong>
+                    <span class="monto">$ {{ f['total'] or 'Sin total' }}</span>
+                    <span class="fecha-small">{{ f['fecha'] or 'Sin fecha' }}</span>
+                </a>
+                {% endfor %}
+                {% if not facturas %}
+                <p class="vacio">Aún no hay facturas.<br>¡Sube la primera!</p>
+                {% endif %}
+            </div>
+        </section>
+    </aside>
+
+    <section class="panel-detalle" aria-label="Detalle de factura">
+        {% if factura_seleccionada %}
+            <div class="encabezado-detalle">
+                <div>
+                    <span class="sobrelinea">DETALLE DE FACTURA</span>
+                    <h2 title="{{ factura_seleccionada['nombre_archivo'] }}">{{ factura_seleccionada['nombre_archivo'] }}</h2>
+                </div>
+                <span class="tipo-detalle">{{ factura_seleccionada['tipo_pdf'] }}</span>
+            </div>
+            <section class="documento-factura" aria-label="Documento original">
+                <h3>Documento original</h3>
+                <button
+                    type="button"
+                    class="miniatura-factura cargando-miniatura"
+                    data-factura-id="{{ factura_seleccionada['id'] }}"
+                    data-nombre="{{ factura_seleccionada['nombre_archivo'] }}"
+                    aria-label="Abrir documento original"
+                >
+                    <img
+                        src="/api/facturas/{{ factura_seleccionada['id'] }}/miniatura"
+                        alt="Miniatura de {{ factura_seleccionada['nombre_archivo'] }}"
+                    >
+                    <span>Haz clic para ampliar</span>
+                </button>
+                <p class="miniatura-error" hidden>El archivo original no está disponible.</p>
+            </section>
+            <div class="tabla-datos-contenedor">
+                <table class="tabla-datos">
+                    <caption>Datos detectados</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Proveedor</th>
+                            <th scope="col">NIT proveedor</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Estado Transacción</th>
+                            <th scope="col">Fecha</th>
+                            <th scope="col">Hora</th>
+                            <th scope="col">Referencia</th>
+                            <th scope="col">Nro autorización</th>
+                            <th scope="col">Punto de recaudo</th>
+                            <th scope="col">Banco</th>
+                            <th scope="col">Texto extraído</th>
+                            <th scope="col">JSON</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>{{ factura_seleccionada['proveedor'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['nit_proveedor'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['total'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['estado_transaccion'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['fecha'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['hora'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['referencia'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['numero_autorizacion'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['punto_recaudo'] or '—' }}</td>
+                            <td>{{ factura_seleccionada['banco'] or '—' }}</td>
+                            <td><button type="button" class="btn-ver-salida" data-tipo-salida="texto">Ver</button></td>
+                            <td>
+                                <button type="button" class="btn-ver-salida" data-tipo-salida="json">Ver</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <script type="application/json" id="textoExtraidoFacturaData">{{ factura_seleccionada['texto_extraido'] | tojson }}</script>
+            <script type="application/json" id="jsonFacturaData">{{ {
+                "ok": true,
+                "archivo": factura_seleccionada['nombre_archivo'],
+                "datos": {
+                    "tipo": factura_seleccionada['tipo_pdf'],
+                    "proveedor": factura_seleccionada['proveedor'] or "",
+                    "nit_proveedor": factura_seleccionada['nit_proveedor'] or "",
+                    "total": factura_seleccionada['total'] or "",
+                    "estado_transaccion": factura_seleccionada['estado_transaccion'] or "",
+                    "fecha": factura_seleccionada['fecha'] or "",
+                    "hora": factura_seleccionada['hora'] or "",
+                    "referencia": factura_seleccionada['referencia'] or "",
+                    "numero_autorizacion": factura_seleccionada['numero_autorizacion'] or "",
+                    "punto_recaudo": factura_seleccionada['punto_recaudo'] or "",
+                    "banco": factura_seleccionada['banco'] or ""
+                }
+            } | tojson }}</script>
+        {% else %}
+            <div class="detalle-vacio">
+                <img
+                    src="{{ url_for('static', filename='img/factura.png') }}"
+                    alt=""
+                    aria-hidden="true"
+                >
+                <h2>Tu espacio de trabajo</h2>
+                <p>Selecciona una factura del historial para ver sus datos, o sube un documento para empezar.</p>
+            </div>
         {% endif %}
+    </section>
+</main>
+
+<template id="esqueletoDetalleFactura">
+    <div class="detalle-esqueleto" aria-hidden="true">
+        <div class="encabezado-detalle encabezado-detalle-esqueleto">
+            <div class="esqueleto-encabezado-texto">
+                <span class="skeleton-line esqueleto-sobrelinea"></span>
+                <span class="skeleton-line esqueleto-nombre-factura"></span>
+            </div>
+            <span class="skeleton-line esqueleto-tipo-factura"></span>
+        </div>
+        <section class="documento-factura documento-factura-esqueleto">
+            <span class="skeleton-line esqueleto-titulo-documento"></span>
+            <span class="skeleton-line esqueleto-imagen-documento"></span>
+        </section>
+        <div class="tabla-datos-contenedor tabla-datos-esqueleto">
+            <table class="tabla-datos">
+                <caption><span class="skeleton-line esqueleto-caption"></span></caption>
+                <thead>
+                    <tr>
+                        {% for _ in range(12) %}
+                        <th><span class="skeleton-line"></span></th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        {% for _ in range(12) %}
+                        <td><span class="skeleton-line"></span></td>
+                        {% endfor %}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
+</template>
 
-    {% if factura_seleccionada %}
-    <div class="panel-detalle">
-        <h2>{{ factura_seleccionada['nombre_archivo'] }}</h2>
-        <table class="tabla-datos">
-            <tr><td><strong>Proveedor</strong></td><td>{{ factura_seleccionada['proveedor'] or 'No detectado' }}</td></tr>
-            <tr><td><strong>Total</strong></td><td>{{ factura_seleccionada['total'] or 'No detectado' }}</td></tr>
-            <tr><td><strong>Fecha</strong></td><td>{{ factura_seleccionada['fecha'] or 'No detectada' }}</td></tr>
-            <tr><td><strong>Banco</strong></td><td>{{ factura_seleccionada['banco'] or 'No detectado' }}</td></tr>
-            <tr><td><strong>Tipo</strong></td><td>{{ factura_seleccionada['tipo_pdf'] }}</td></tr>
-        </table>
-        <h3>Texto extraído:</h3>
-        <pre class="texto-crudo">{{ factura_seleccionada['texto_extraido'] }}</pre>
+<dialog class="visor-salida-factura" id="visorSalidaFactura" aria-labelledby="tituloSalidaFactura">
+    <div class="visor-encabezado">
+        <strong id="tituloSalidaFactura">Datos de factura</strong>
+        <div class="acciones-visor-salida">
+            <a
+                class="btn-descargar-json-tabla"
+                id="descargarJsonFactura"
+                href="/api/facturas/{{ factura_seleccionada['id'] if factura_seleccionada else '' }}/json"
+                hidden
+            >Descargar JSON</a>
+            <button type="button" class="cerrar-visor" id="cerrarSalidaFactura">Cerrar</button>
+        </div>
     </div>
-    {% endif %}
-</div>
+    <pre class="visor-salida-contenido" id="contenidoSalidaFactura"></pre>
+</dialog>
 
+<dialog id="visor-documento" class="visor-documento" aria-label="Vista completa del documento">
+    <div class="visor-encabezado">
+        <strong id="visor-titulo">Vista previa</strong>
+        <button type="button" id="cerrar-visor" class="cerrar-visor" aria-label="Cerrar vista previa">Cerrar</button>
+    </div>
+    <div class="visor-contenido">
+        <img id="visor-imagen" alt="Documento completo" style="display:none">
+        <p id="visor-estado" style="display:none"></p>
+        <div id="visor-paginas" style="display:none"></div>
+    </div>
+</dialog>
 
-<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+<script src="{{ url_for('static', filename='js/script.js', v='20261112-3') }}"></script>
 </body>
 </html>
