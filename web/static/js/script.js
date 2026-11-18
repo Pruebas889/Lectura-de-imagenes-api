@@ -363,9 +363,14 @@ function actualizarControlTema() {
 }
 
 actualizarControlTema();
+let themeTransitionTimer;
 btnTema.addEventListener('click', () => {
     const tema = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = tema;
+    const root = document.documentElement;
+    root.classList.add('theme-transition');
+    root.dataset.theme = tema;
+    window.clearTimeout(themeTransitionTimer);
+    themeTransitionTimer = window.setTimeout(() => root.classList.remove('theme-transition'), 720);
     localStorage.setItem('tema-facturas', tema);
     actualizarControlTema();
 });

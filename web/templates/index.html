@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visor de Facturas</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo-lectura.png', v='20261118-1') }}">
     <script>
         document.documentElement.dataset.theme =
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261112-46') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-4') }}">
 </head>
 <body class="pantalla-individual">
 
 <h1>
     <div class="marca-navegacion">
         <a class="enlace-inicio" href="{{ url_for('index') }}" aria-label="Ir a Inicio" title="Ir a Inicio">
-            <img class="marca-icono" src="{{ url_for('static', filename='img/factura.png') }}" alt="" aria-hidden="true">
+            <img class="marca-icono" src="{{ url_for('static', filename='img/logo-lectura.png') }}" alt="" aria-hidden="true">
         </a>
         <nav class="navegacion-principal" aria-label="Navegación principal">
             <a href="{{ url_for('index') }}">Inicio</a>
@@ -245,6 +246,6 @@
     </div>
 </dialog>
 
-<script src="{{ url_for('static', filename='js/script.js', v='20261112-11') }}"></script>
+<script src="{{ url_for('static', filename='js/script.js', v='20261118-2') }}"></script>
 </body>
 </html>
