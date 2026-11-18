@@ -17,7 +17,6 @@ from config.settings import (
 import tempfile
 
 from services.factura_service import _procesar_archivo
-from extractors.ai_extractor import GroqQuotaExceeded
 
 EXTENSIONES_DOCUMENTO = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -257,10 +256,8 @@ def _resultado_procesamiento(archivo):
                 "advertencia_cuota_groq": factura.advertencia_cuota_groq
             }
         }
-    except (ValueError, RuntimeError, GroqQuotaExceeded) as error:
-        if isinstance(error, GroqQuotaExceeded):
-            estado = 429
-        elif isinstance(error, ValueError):
+    except (ValueError, RuntimeError) as error:
+        if isinstance(error, ValueError):
             estado = 400 if str(error) == "Nombre de archivo vacío" else 415
         else:
             estado = 422
@@ -360,14 +357,14 @@ def _datos_json_factura(factura):
             "tipo": factura["tipo_pdf"] or "",
             "proveedor": factura["proveedor"] or "",
             "nit_proveedor": factura["nit_proveedor"] or "",
-            "total": factura["total"] or "",
-            "estado_transaccion": factura["estado_transaccion"] or "",
-            "fecha": factura["fecha"] or "",
-            "hora": factura["hora"] or "",
-            "referencia": factura["referencia"] or "",
-            "numero_autorizacion": factura["numero_autorizacion"] or "",
-            "punto_recaudo": factura["punto_recaudo"] or "",
-            "banco": factura["banco"] or ""
+            "total": factura["total"] or "No legible",
+            "estado_transaccion": factura["estado_transaccion"] or "No legible",
+            "fecha": factura["fecha"] or "No legible",
+            "hora": factura["hora"] or "No legible",
+            "referencia": factura["referencia"] or "No legible",
+            "numero_autorizacion": factura["numero_autorizacion"] or "No legible",
+            "punto_recaudo": factura["punto_recaudo"] or "No legible",
+            "banco": factura["banco"] or "No legible"
         }
     }
 

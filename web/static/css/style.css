@@ -1384,7 +1384,7 @@ body.arrastrando-archivo .drop-hint-activo {
     font-size: 0.77rem;
 }
 
-.btn-reestablecer {
+.btn-revertir {
     min-width: 145px;
     min-height: 42px;
     margin: 0;
@@ -1398,14 +1398,20 @@ body.arrastrando-archivo .drop-hint-activo {
     font-weight: 700;
 }
 
-.btn-reestablecer:hover:not(:disabled) {
+.btn-revertir:hover:not(:disabled) {
     border-color: var(--color-primary);
     background: var(--color-surface-subtle);
 }
 
-.btn-reestablecer:disabled {
+.btn-revertir:disabled {
     opacity: 0.62;
     cursor: not-allowed;
+}
+
+.upload-box .btn-revertir-individual {
+    width: 100%;
+    min-width: 0;
+    margin-top: 9px;
 }
 
 .pie-masivo .btn-procesar-masivo {
@@ -1704,6 +1710,22 @@ dialog::backdrop {
 .confirmar-salida-masiva {
     width: min(440px, calc(100% - 28px));
     padding: 22px;
+}
+
+.btn-dato-no-legible {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-primary);
+    cursor: help;
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+
+.btn-dato-no-legible:hover,
+.btn-dato-no-legible:focus-visible {
+    color: var(--color-primary-hover);
 }
 
 .confirmar-salida-masiva h2 {

@@ -1,9 +1,12 @@
 from PIL import Image
-import pytesseract
 import os
 
 from extractors.image_preprocessor import procesar_imagen_fotografia
-from extractors.ocr_utils import validar_tesseract
+from extractors.ocr_utils import (
+    calidad_texto_ocr,
+    extraer_texto_por_variantes,
+    validar_tesseract
+)
 
 
 def extraer_texto_imagen(ruta_imagen):
@@ -26,36 +29,30 @@ def extraer_texto_imagen(ruta_imagen):
 
     ruta_procesada = None
     try:
-        ruta_procesada = procesar_imagen_fotografia(ruta_imagen)
-        
-        if ruta_procesada is None:
-            print("[image_ocr] ERROR: Preprocesamiento falló")
-            raise RuntimeError("No se pudo preprocesar la imagen para OCR.")
-        
-        config_ocr = (
-            "--oem 3 "
-            "--psm 4 "
-            "-l spa+eng "
-            "-c preserve_interword_spaces=1 "
-            "-c textord_heavy_nr=1"
-        )
-        
-        try:
-            with Image.open(ruta_procesada) as img_procesada:
-                print(f"[image_ocr] Imagen procesada: {img_procesada.size}")
-                texto_completo = pytesseract.image_to_string(
-                    img_procesada,
-                    config=config_ocr
+        with Image.open(ruta_imagen) as imagen:
+            texto_completo = extraer_texto_por_variantes(
+                imagen,
+                modos_segmentacion=(11, 6, 4),
+                escala=2
+            )
+
+        puntaje_texto = calidad_texto_ocr(texto_completo)
+        if puntaje_texto[0] < 14 or puntaje_texto[1] < 120:
+            ruta_procesada = procesar_imagen_fotografia(ruta_imagen)
+            with Image.open(ruta_procesada) as imagen_procesada:
+                texto_procesado = extraer_texto_por_variantes(
+                    imagen_procesada,
+                    modos_segmentacion=(11, 6, 4),
+                    escala=2
                 )
-        except Exception as e:
-            raise RuntimeError(f"No se pudo leer el texto de la imagen: {e}") from e
+            if calidad_texto_ocr(texto_procesado) > puntaje_texto:
+                texto_completo = texto_procesado
         
         texto_completo = texto_completo.strip()
         caracteres = len(texto_completo)
         print(f"[image_ocr] OCR completado ({caracteres} caracteres)")
         
         return texto_completo
-
     except RuntimeError:
         raise
     except Exception as e:

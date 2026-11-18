@@ -1,11 +1,8 @@
 import os
 import shutil
-import tempfile
 import uuid
 
-from pdf2image import convert_from_path
-
-from config.settings import DOCUMENT_FOLDER, GROQ_API_KEY, POPPLER_PATH
+from config.settings import DOCUMENT_FOLDER
 
 from extractors.image_ocr import extraer_texto_imagen
 
@@ -14,11 +11,9 @@ from database.db_manager import guardar_factura
 from extractors.pdf_text import extraer_texto_pdf
 from extractors.pdf_ocr import extraer_texto_ocr, es_pdf_escaneado
 from extractors.cleaner import limpiar_texto, extraer_patrones
-from extractors.regex_extractor import extraer_con_regex
-from extractors.ai_extractor import (
-    GroqQuotaExceeded,
-    extraer_con_ia_desde_imagen,
-    es_imagen
+from extractors.regex_extractor import (
+    completar_campos_no_legibles,
+    extraer_con_regex
 )
 
 from models.factura import Factura
@@ -43,36 +38,22 @@ def _tiene_datos(datos: dict) -> bool:
 
 def _completar_con_patrones(datos: dict, texto: str) -> dict:
     respaldo = extraer_patrones(texto)
-    for campo in ("total", "fecha", "banco", "proveedor"):
+    for campo in ("banco", "proveedor"):
         if not datos.get(campo) and respaldo.get(campo):
             datos[campo] = respaldo[campo]
     return datos
 
 
-def _completar_con_vision(ruta: str, datos: dict) -> tuple[dict, bool]:
-    if _tiene_datos(datos) or not GROQ_API_KEY:
-        return datos, False
-
-    try:
-        datos_vision = extraer_con_ia_desde_imagen(ruta, datos)
-        return {**datos, **{k: v for k, v in datos_vision.items() if v}}, False
-    except GroqQuotaExceeded as error:
-        print(f"[Groq] {error} Se conserva el resultado local.")
-        return datos, True
-
-
 def _procesar_archivo(ruta: str, nombre: str) -> Factura:
     ext = os.path.splitext(nombre)[1].lower()
-    advertencia_cuota_groq = False
 
-    if es_imagen(nombre):
+    if ext in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}:
         tipo = "imagen"
         print("Imagen detectada -> Tesseract OCR y extracción local...")
         texto_crudo = extraer_texto_imagen(ruta)
         texto_limpio = limpiar_texto(texto_crudo)
         datos = extraer_con_regex(texto_limpio.upper())
         datos = _completar_con_patrones(datos, texto_limpio)
-        datos, advertencia_cuota_groq = _completar_con_vision(ruta, datos)
     elif ext == ".pdf":
         if es_pdf_escaneado(ruta):
             tipo = "escaneado"
@@ -81,30 +62,6 @@ def _procesar_archivo(ruta: str, nombre: str) -> Factura:
             texto_limpio = limpiar_texto(texto_crudo)
             datos = extraer_con_regex(texto_limpio.upper())
             datos = _completar_con_patrones(datos, texto_limpio)
-            if not _tiene_datos(datos) and GROQ_API_KEY:
-                paginas = convert_from_path(
-                    ruta,
-                    dpi=150,
-                    first_page=1,
-                    last_page=1,
-                    poppler_path=POPPLER_PATH
-                )
-                try:
-                    if paginas:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
-                            ruta_img_tmp = tmp_img.name
-                        try:
-                            paginas[0].save(ruta_img_tmp, "PNG")
-                            datos, advertencia_cuota_groq = _completar_con_vision(
-                                ruta_img_tmp,
-                                datos
-                            )
-                        finally:
-                            if os.path.exists(ruta_img_tmp):
-                                os.unlink(ruta_img_tmp)
-                finally:
-                    for pagina in paginas:
-                        pagina.close()
         else:
             tipo = "digital"
             texto_crudo = extraer_texto_pdf(ruta)
@@ -123,11 +80,7 @@ def _procesar_archivo(ruta: str, nombre: str) -> Factura:
             "Usa PDF, JPG, PNG, WEBP, BMP o TIFF."
         )
 
-    if not _tiene_datos(datos):
-        raise RuntimeError(
-            "No se pudieron extraer datos del documento. Verifica la calidad del archivo "
-            "y que Tesseract esté instalado y configurado."
-        )
+    datos = completar_campos_no_legibles(datos)
 
     factura = Factura(
         nombre_archivo=nombre,
@@ -137,7 +90,6 @@ def _procesar_archivo(ruta: str, nombre: str) -> Factura:
         total=datos.get("total", ""),
         fecha=datos.get("fecha", ""),
         proveedor=datos.get("proveedor", ""),
-        advertencia_cuota_groq=advertencia_cuota_groq,
         nit_proveedor=datos.get("nit_proveedor") or datos.get("nit", ""),
         estado_transaccion=datos.get("estado_transaccion", ""),
         hora=datos.get("hora", ""),

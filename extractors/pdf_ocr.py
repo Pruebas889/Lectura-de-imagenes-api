@@ -1,7 +1,7 @@
 from config.imports import *
 from config.settings import POPPLER_PATH
 from pdf2image import pdfinfo_from_path
-from extractors.ocr_utils import validar_tesseract
+from extractors.ocr_utils import extraer_texto_por_variantes, validar_tesseract
 
 
 def extraer_texto_ocr(ruta_pdf):
@@ -34,16 +34,11 @@ def extraer_texto_ocr(ruta_pdf):
             imagen = paginas[0]
             imagen_ocr = None
             try:
-                config_ocr = (
-                    "--oem 3 "
-                    "--psm 6 "
-                    "-l spa+eng "
-                    "-c preserve_interword_spaces=1 "
-                    "-c textord_heavy_nr=1 "
-                    "-c textord_min_linesize=2.5"
-                )
                 imagen_ocr = imagen.convert("L")
-                texto = pytesseract.image_to_string(imagen_ocr, config=config_ocr)
+                texto = extraer_texto_por_variantes(
+                    imagen_ocr,
+                    modos_segmentacion=(6, 11)
+                )
             finally:
                 if imagen_ocr is not None:
                     imagen_ocr.close()

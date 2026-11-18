@@ -1,3 +1,17 @@
+{% macro dato_factura(valor, campo) -%}
+    {%- if valor and valor != 'No legible' -%}
+        {{ valor }}
+    {%- else -%}
+        <button
+            type="button"
+            class="btn-dato-no-legible"
+            data-campo="{{ campo }}"
+            aria-haspopup="dialog"
+            aria-label="El dato {{ campo }} no es legible. Ver recomendaciones."
+            title="Ver recomendaciones para mejorar la lectura"
+        >No legible</button>
+    {%- endif -%}
+{%- endmacro %}
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -10,7 +24,7 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-6') }}">
 </head>
 <body class="pantalla-individual">
 
@@ -67,6 +81,7 @@
                 <span>Subir</span>
             </label>
             <input type="file" id="inputArchivo" accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff" multiple style="display:none">
+            <button type="button" class="btn-revertir btn-revertir-individual" id="btnRevertirIndividual" title="Descartar la selección actual y limpiar esta pantalla">Revertir</button>
             <div class="drop-hint" aria-live="polite">
                 <span class="drop-hint-normal">Arrastrar</span>
                 <span class="drop-hint-activo">Soltar aquí</span>
@@ -134,14 +149,14 @@
                         <tr>
                             <td>{{ factura_seleccionada['proveedor'] or '—' }}</td>
                             <td>{{ factura_seleccionada['nit_proveedor'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['total'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['estado_transaccion'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['fecha'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['hora'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['referencia'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['numero_autorizacion'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['punto_recaudo'] or '—' }}</td>
-                            <td>{{ factura_seleccionada['banco'] or '—' }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['total'], 'Total') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['estado_transaccion'], 'Estado de la transacción') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['fecha'], 'Fecha') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['hora'], 'Hora') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['referencia'], 'Referencia') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['numero_autorizacion'], 'Número de autorización') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['punto_recaudo'], 'Punto de recaudo') }}</td>
+                            <td>{{ dato_factura(factura_seleccionada['banco'], 'Banco') }}</td>
                             <td><button type="button" class="btn-ver-salida" data-tipo-salida="texto" title="Ver el texto extraído de la factura">Ver</button></td>
                             <td>
                                 <button type="button" class="btn-ver-salida" data-tipo-salida="json" title="Ver los datos de la factura en formato JSON">Ver</button>
@@ -158,14 +173,14 @@
                     "tipo": factura_seleccionada['tipo_pdf'],
                     "proveedor": factura_seleccionada['proveedor'] or "",
                     "nit_proveedor": factura_seleccionada['nit_proveedor'] or "",
-                    "total": factura_seleccionada['total'] or "",
-                    "estado_transaccion": factura_seleccionada['estado_transaccion'] or "",
-                    "fecha": factura_seleccionada['fecha'] or "",
-                    "hora": factura_seleccionada['hora'] or "",
-                    "referencia": factura_seleccionada['referencia'] or "",
-                    "numero_autorizacion": factura_seleccionada['numero_autorizacion'] or "",
-                    "punto_recaudo": factura_seleccionada['punto_recaudo'] or "",
-                    "banco": factura_seleccionada['banco'] or ""
+                    "total": factura_seleccionada['total'] or "No legible",
+                    "estado_transaccion": factura_seleccionada['estado_transaccion'] or "No legible",
+                    "fecha": factura_seleccionada['fecha'] or "No legible",
+                    "hora": factura_seleccionada['hora'] or "No legible",
+                    "referencia": factura_seleccionada['referencia'] or "No legible",
+                    "numero_autorizacion": factura_seleccionada['numero_autorizacion'] or "No legible",
+                    "punto_recaudo": factura_seleccionada['punto_recaudo'] or "No legible",
+                    "banco": factura_seleccionada['banco'] or "No legible"
                 }
             } | tojson }}</script>
         {% else %}
@@ -234,6 +249,23 @@
     <pre class="visor-salida-contenido" id="contenidoSalidaFactura"></pre>
 </dialog>
 
+<dialog class="confirmar-salida-masiva" id="avisoNoLegible" aria-labelledby="tituloNoLegible">
+    <h2 id="tituloNoLegible">Dato no legible</h2>
+    <p>Sube una foto clara y enfocada, con la mejor calidad posible, para que la aplicación pueda leer y mostrar la información con precisión.</p>
+    <div class="acciones-confirmar-salida">
+        <button type="button" class="btn-cancelar-salida" id="cerrarAvisoNoLegible" title="Cerrar este aviso">Entendido</button>
+    </div>
+</dialog>
+
+<dialog class="confirmar-salida-masiva" id="confirmarReversionIndividual" aria-labelledby="tituloReversionIndividual">
+    <h2 id="tituloReversionIndividual">¿Revertir la carga actual?</h2>
+    <p>Se descartará el archivo o la selección actual, se cerrará la vista previa y se limpiarán los resultados de esta pantalla. No se iniciará el procesamiento ni se eliminarán facturas del historial.</p>
+    <div class="acciones-confirmar-salida">
+        <button type="button" class="btn-cancelar-salida" id="cancelarReversionIndividual" title="Conservar la selección actual">Cancelar</button>
+        <button type="button" class="btn-aceptar-salida" id="aceptarReversionIndividual" title="Descartar la selección actual">Revertir</button>
+    </div>
+</dialog>
+
 <dialog id="visor-documento" class="visor-documento" aria-label="Vista completa del documento">
     <div class="visor-encabezado">
         <strong id="visor-titulo">Vista previa</strong>
@@ -246,6 +278,6 @@
     </div>
 </dialog>
 
-<script src="{{ url_for('static', filename='js/script.js', v='20261118-2') }}"></script>
+<script src="{{ url_for('static', filename='js/script.js', v='20261118-4') }}"></script>
 </body>
 </html>

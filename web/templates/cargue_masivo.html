@@ -10,7 +10,7 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-6') }}">
 </head>
 <body class="pantalla-masiva">
 <h1>
@@ -127,17 +127,17 @@
     </section>
 
     <div class="pie-masivo">
-        <button class="btn-reestablecer" id="btnReestablecerMasivo" type="button" title="Descartar los archivos cargados y comenzar de nuevo" disabled>Reestablecer</button>
+        <button class="btn-revertir" id="btnRevertirMasivo" type="button" title="Descartar el lote actual y limpiar esta pantalla">Revertir</button>
         <button class="btn-procesar-masivo" id="btnProcesarMasivo" type="button" title="Leer los documentos de la cola" disabled>Leer</button>
     </div>
 </main>
 
 <dialog class="confirmar-salida-masiva" id="confirmarSalidaMasiva" aria-labelledby="tituloConfirmarSalida">
-    <h2 id="tituloConfirmarSalida">¿Descartar el lote actual?</h2>
-    <p>Si continúas, se descartarán los archivos cargados y tendrás que volver a seleccionarlos.</p>
+    <h2 id="tituloConfirmarSalida">¿Revertir el lote actual?</h2>
+    <p id="textoConfirmarSalida">Se descartarán los archivos pendientes y se limpiará esta pantalla. Las facturas ya procesadas permanecerán en el historial.</p>
     <div class="acciones-confirmar-salida">
         <button type="button" class="btn-cancelar-salida" id="cancelarSalidaMasiva" title="Conservar el lote y permanecer en esta pantalla">Cancelar</button>
-        <button type="button" class="btn-aceptar-salida" id="aceptarSalidaMasiva" title="Confirmar y descartar el lote">Aceptar</button>
+        <button type="button" class="btn-aceptar-salida" id="aceptarSalidaMasiva" title="Confirmar y descartar el lote">Revertir</button>
     </div>
 </dialog>
 
@@ -174,6 +174,6 @@
         actualizarTema();
     });
 </script>
-<script src="{{ url_for('static', filename='js/masivo.js', v='20261112-28') }}" defer></script>
+<script src="{{ url_for('static', filename='js/masivo.js', v='20261118-1') }}" defer></script>
 </body>
 </html>

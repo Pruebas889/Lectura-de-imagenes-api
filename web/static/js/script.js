@@ -22,6 +22,12 @@ const visorSalidaFactura = document.getElementById('visorSalidaFactura');
 const tituloSalidaFactura = document.getElementById('tituloSalidaFactura');
 const contenidoSalidaFactura = document.getElementById('contenidoSalidaFactura');
 const descargarJsonFactura = document.getElementById('descargarJsonFactura');
+const avisoNoLegible = document.getElementById('avisoNoLegible');
+const tituloNoLegible = document.getElementById('tituloNoLegible');
+const btnRevertirIndividual = document.getElementById('btnRevertirIndividual');
+const confirmarReversionIndividual = document.getElementById('confirmarReversionIndividual');
+const cancelarReversionIndividual = document.getElementById('cancelarReversionIndividual');
+const aceptarReversionIndividual = document.getElementById('aceptarReversionIndividual');
 const miniaturaFactura = document.querySelector('.miniatura-factura');
 const panelLista = document.querySelector('.panel-lista');
 const panelDetalle = document.querySelector('.panel-detalle');
@@ -75,6 +81,7 @@ function mostrarEstadoCarga(estado, texto) {
     btnSubir.classList.remove('estado-subiendo', 'estado-cargado', 'estado-error', 'listo-para-procesar');
     btnSubir.setAttribute('aria-busy', String(accionSelector === 'abriendo' || accionSelector === 'procesando'));
     bloquearSelector(accionSelector === 'procesando');
+    btnRevertirIndividual.disabled = accionSelector === 'abriendo' || accionSelector === 'procesando';
 
     if (accionSelector === 'subir' || accionSelector === 'procesar') {
         const icono = accionSelector === 'procesar' ? iconoProcesar : iconoSubir;
@@ -111,6 +118,7 @@ function mostrarEstadoCarga(estado, texto) {
 function mostrarEstadoLeido(alTerminar) {
     accionSelector = 'leido';
     bloquearSelector(true);
+    btnRevertirIndividual.disabled = true;
     btnSubir.classList.remove('estado-subiendo', 'estado-cargado', 'estado-error', 'listo-para-procesar');
     btnSubir.classList.add('estado-leido');
     btnSubir.setAttribute('aria-busy', 'false');
@@ -251,6 +259,13 @@ function mostrarEstadoVisorMensaje(texto) {
 
 if (visorSalidaFactura && panelDetalle) {
     panelDetalle.addEventListener('click', event => {
+        const botonNoLegible = event.target.closest('.btn-dato-no-legible');
+        if (botonNoLegible && avisoNoLegible) {
+            tituloNoLegible.textContent = `Dato no legible: ${botonNoLegible.dataset.campo}`;
+            avisoNoLegible.showModal();
+            return;
+        }
+
         const boton = event.target.closest('.btn-ver-salida');
         if (!boton) return;
 
@@ -275,6 +290,14 @@ if (visorSalidaFactura && panelDetalle) {
 
     visorSalidaFactura.addEventListener('click', event => {
         if (event.target === visorSalidaFactura) visorSalidaFactura.close();
+    });
+
+    document.getElementById('cerrarAvisoNoLegible').addEventListener('click', () => {
+        avisoNoLegible.close();
+    });
+
+    avisoNoLegible.addEventListener('click', event => {
+        if (event.target === avisoNoLegible) avisoNoLegible.close();
     });
 }
 
@@ -575,6 +598,39 @@ document.getElementById('cerrar-visor').addEventListener('click', cerrarVistaCom
 visorDocumento.addEventListener('click', event => {
     if (event.target === visorDocumento) {
         cerrarVistaCompleta();
+    }
+});
+
+btnRevertirIndividual.addEventListener('click', () => {
+    confirmarReversionIndividual.showModal();
+    cancelarReversionIndividual.focus();
+});
+
+cancelarReversionIndividual.addEventListener('click', () => {
+    confirmarReversionIndividual.close();
+    btnRevertirIndividual.focus();
+});
+
+aceptarReversionIndividual.addEventListener('click', () => {
+    confirmarReversionIndividual.close();
+    input.value = '';
+    selectorEsperandoArchivos = false;
+    seleccionCambiadaDuranteExplorador = false;
+    mostrarAvisoHistorial([]);
+    limpiarVistaPrevia();
+    resultado.replaceChildren();
+    resultado.className = 'resultado';
+    resultado.setAttribute('aria-busy', 'false');
+    resultado.style.display = 'none';
+    mostrarEstadoCarga('', textoBtnSubir);
+    bloquearSelector(false);
+    btnRevertirIndividual.focus();
+});
+
+confirmarReversionIndividual.addEventListener('click', event => {
+    if (event.target === confirmarReversionIndividual) {
+        confirmarReversionIndividual.close();
+        btnRevertirIndividual.focus();
     }
 });
 

@@ -10,21 +10,6 @@ import cv2
 import numpy as np
 
 
-def _detectar_y_rotar_documento(img: Image.Image) -> Image.Image:
-    """
-    Detecta si la imagen está horizontal y la rota a vertical.
-    """
-    
-    ancho, alto = img.size
-    
-    if ancho > alto:
-        print("[PREPROCESSOR] Imagen horizontal detectada -> Rotando 90 grados")
-        img = img.rotate(90, expand=True)
-        print(f"[PREPROCESSOR] Nueva dimensión: {img.size}")
-    
-    return img
-
-
 def procesar_imagen_fotografia(ruta_imagen: str) -> str:
     """
     Procesa foto de documento.
@@ -79,9 +64,6 @@ def procesar_imagen_fotografia(ruta_imagen: str) -> str:
 
         ancho_orig, alto_orig = img.size
         print(f"[PREPROCESSOR] Tamaño original: {ancho_orig}x{alto_orig}")
-        
-        # PASO 0: Rotar si es necesario
-        img = _detectar_y_rotar_documento(img)
         
         # PASO 1: Redimensionar si es muy grande
         ancho, alto = img.size

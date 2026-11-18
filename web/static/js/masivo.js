@@ -21,9 +21,11 @@ const contenidoSalidaMasiva = document.getElementById('contenidoSalidaMasiva');
 const enlaceInicioMasivo = document.getElementById('enlaceInicioMasivo');
 const enlacesNavegacion = document.querySelectorAll('.navegacion-principal a');
 const confirmarSalidaMasiva = document.getElementById('confirmarSalidaMasiva');
+const tituloConfirmarSalida = document.getElementById('tituloConfirmarSalida');
+const textoConfirmarSalida = document.getElementById('textoConfirmarSalida');
 const cancelarSalidaMasiva = document.getElementById('cancelarSalidaMasiva');
 const aceptarSalidaMasiva = document.getElementById('aceptarSalidaMasiva');
-const btnReestablecerMasivo = document.getElementById('btnReestablecerMasivo');
+const btnRevertirMasivo = document.getElementById('btnRevertirMasivo');
 const extensionesPermitidas = /\.(pdf|jpe?g|png|webp|bmp|tiff?)$/i;
 const camposFactura = [
     ['proveedor', 'Proveedor'],
@@ -83,10 +85,23 @@ function mostrarDuracionFinal(duracionMs) {
 }
 
 function solicitarConfirmacion(event, accion, control) {
-    if (archivosSeleccionados.length === 0) return;
+    if (accion !== 'revertir' && archivosSeleccionados.length === 0) return;
     event.preventDefault();
     accionConfirmacion = accion;
     controlConfirmacion = control;
+    if (accion === 'revertir') {
+        const cantidadArchivos = archivosSeleccionados.length;
+        const etiquetaArchivos = cantidadArchivos === 1 ? 'archivo' : 'archivos';
+        tituloConfirmarSalida.textContent = '¿Revertir el lote actual?';
+        textoConfirmarSalida.textContent = cantidadArchivos
+            ? `Se descartarán los ${cantidadArchivos} ${etiquetaArchivos} de esta cola y se limpiará esta pantalla. Las facturas ya procesadas permanecerán en el historial.`
+            : 'Se limpiará la pantalla actual. No hay archivos pendientes y ninguna factura del historial será eliminada.';
+        aceptarSalidaMasiva.textContent = 'Revertir';
+    } else {
+        tituloConfirmarSalida.textContent = '¿Salir del cargue masivo?';
+        textoConfirmarSalida.textContent = 'Los archivos pendientes se descartarán sin procesarse. Las facturas ya procesadas permanecerán en el historial.';
+        aceptarSalidaMasiva.textContent = 'Salir';
+    }
     confirmarSalidaMasiva.showModal();
     cancelarSalidaMasiva.focus();
 }
@@ -98,8 +113,8 @@ if (confirmarSalidaMasiva && cancelarSalidaMasiva && aceptarSalidaMasiva) {
         });
     });
 
-    btnReestablecerMasivo.addEventListener('click', event => {
-        solicitarConfirmacion(event, 'restablecer', btnReestablecerMasivo);
+    btnRevertirMasivo.addEventListener('click', event => {
+        solicitarConfirmacion(event, 'revertir', btnRevertirMasivo);
     });
 
     cancelarSalidaMasiva.addEventListener('click', () => {
@@ -109,9 +124,9 @@ if (confirmarSalidaMasiva && cancelarSalidaMasiva && aceptarSalidaMasiva) {
 
     aceptarSalidaMasiva.addEventListener('click', () => {
         confirmarSalidaMasiva.close();
-        if (accionConfirmacion === 'restablecer') {
-            restablecerLote();
-            btnReestablecerMasivo.focus();
+        if (accionConfirmacion === 'revertir') {
+            revertirLote();
+            btnRevertirMasivo.focus();
             return;
         }
 
@@ -131,7 +146,7 @@ function liberarUrlsLocales() {
     urlsLocales.clear();
 }
 
-function restablecerLote() {
+function revertirLote() {
     if (procesando) return;
     liberarUrlsLocales();
     archivosSeleccionados = [];
@@ -155,7 +170,7 @@ function restablecerLote() {
     );
     btnProcesarMasivo.disabled = true;
     btnProcesarMasivo.textContent = 'Leer';
-    btnReestablecerMasivo.disabled = true;
+    btnRevertirMasivo.disabled = false;
     btnSeleccionarCarpeta.disabled = false;
     mostrarEstadoSeleccionCarpeta('', 'Subir');
     actualizarContador(0);
@@ -418,7 +433,6 @@ function seleccionarArchivos(archivos, ignorarNoSoportados = false) {
         inputCarpetaMasiva.value = '';
         textoSeleccionMasiva.textContent = mensaje;
         btnProcesarMasivo.disabled = true;
-        btnReestablecerMasivo.disabled = true;
         btnSeleccionarCarpeta.disabled = false;
         actualizarContador(0);
         mostrarFilaVacia('Corrige la selección para continuar.');
@@ -454,7 +468,6 @@ function seleccionarArchivos(archivos, ignorarNoSoportados = false) {
     liberarUrlsLocales();
     archivosSeleccionados = validos;
     btnSeleccionarCarpeta.disabled = true;
-    btnReestablecerMasivo.disabled = false;
     facturasProcesadas = [];
     salidasProcesadas.clear();
     btnDescargarJsonMasivo.disabled = true;
@@ -492,7 +505,6 @@ inputCarpetaMasiva.addEventListener('change', () => {
         archivosSeleccionados.length ? 'Listo' : 'Subir'
     );
     btnSeleccionarCarpeta.disabled = archivosSeleccionados.length > 0;
-    btnReestablecerMasivo.disabled = archivosSeleccionados.length === 0;
 });
 
 function leerArchivoDeEntrada(entrada) {
@@ -788,7 +800,7 @@ btnProcesarMasivo.addEventListener('click', async () => {
     actualizarContador(0, total);
     zonaMasiva.classList.add('procesando-masivo');
     btnSeleccionarCarpeta.disabled = true;
-    btnReestablecerMasivo.disabled = true;
+    btnRevertirMasivo.disabled = true;
     btnProcesarMasivo.disabled = true;
     mostrarEstadoSeleccionCarpeta('subiendo', 'Cargando');
     mostrarBotonProcesando(btnProcesarMasivo, 'Procesando...');
@@ -812,7 +824,7 @@ btnProcesarMasivo.addEventListener('click', async () => {
     mostrarDuracionFinal(duracionTotal);
     zonaMasiva.classList.remove('procesando-masivo');
     btnSeleccionarCarpeta.disabled = true;
-    btnReestablecerMasivo.disabled = archivosSeleccionados.length === 0;
+    btnRevertirMasivo.disabled = false;
     mostrarEstadoSeleccionCarpeta(
         fallidos === 0 ? 'cargado' : 'error',
         fallidos === 0 ? 'Listo' : 'Error al cargar'

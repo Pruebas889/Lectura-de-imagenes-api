@@ -7,10 +7,11 @@ Aplicación web y API en Flask para leer facturas desde PDF e imágenes. Extrae 
 - Python 3.10 o posterior. Las dependencias, las rutas web y el preprocesamiento de imágenes se validaron en Windows con Python 3.10.22 y 3.13.15.
 - Tesseract OCR para procesar imágenes y PDF escaneados.
 - Poppler para convertir páginas de PDF a imágenes (necesario para la vista previa y el OCR de PDF).
-- Groq es opcional; se usa como respaldo si Tesseract y las reglas locales no detectan datos.
 - MySQL/MariaDB es opcional; SQLite sigue siendo el motor predeterminado.
 
 En Windows, instala Tesseract (con los datos de idioma español e inglés) y Poppler y asegúrate de que estén en `PATH`, o define las variables `TESSERACT_PATH` y `POPPLER_PATH`. El proyecto busca algunas ubicaciones habituales de Tesseract y Poppler automáticamente. Si no puede encontrar las herramientas, configura sus rutas en `config/settings.py` o mediante esas variables de entorno.
+
+La aplicación web y `main.py` procesan los documentos localmente con Tesseract y reglas de extracción; no envían su contenido a servicios externos. Cuando un campo no se identifica, el JSON muestra `No legible`.
 
 ## Instalación en Windows
 
@@ -29,18 +30,6 @@ python -m pip install -r requirements.txt
 ```
 
 Si PowerShell bloquea la activación del entorno, puedes omitirla y ejecutar Python directamente desde `.venv\Scripts\python.exe`.
-
-## Configuración opcional de Groq
-
-Groq es opcional y solo se consulta como respaldo cuando OCR y las reglas locales no detectan datos. Configura la clave como variable de entorno:
-
-```powershell
-$env:GROQ_API_KEY = "tu_clave_de_groq"
-```
-
-No publiques ni compartas una clave real. Sin ella, las funciones que dependen de Groq no estarán disponibles; la aplicación puede recurrir a la extracción basada en OCR y expresiones regulares.
-
-Si Groq no está configurado o alcanza su cuota, el procesamiento local con Tesseract sigue siendo el camino principal.
 
 ## Iniciar la aplicación web
 
@@ -173,4 +162,4 @@ Los resultados se guardan en la misma base de datos SQLite.
 
 - SQLite se usa de forma predeterminada. Selecciona MySQL/MariaDB con `DB_ENGINE=mysql`; configura `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER` y `MYSQL_PASSWORD` mediante variables de entorno.
 - La aplicación inicia el servidor Flask de desarrollo con debug desactivado y enlazado a `127.0.0.1`. Sigue siendo un servidor de desarrollo y no tiene autenticación: no la expongas a la red. Antes del uso compartido hacen falta un servidor WSGI, autenticación/autorización y una estrategia de cola y trabajadores. `APP_HOST` permite cambiar el host solo cuando el despliegue ya esté protegido.
-- Los resultados del OCR pueden requerir revisión, especialmente cuando el documento tiene baja resolución o está inclinado.
+- Los resultados del OCR pueden requerir revisión, especialmente cuando el documento tiene baja resolución o está inclinado. Los campos marcados `No legible` son interactivos y muestran recomendaciones para subir una imagen más clara.
