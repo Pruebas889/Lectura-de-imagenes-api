@@ -34,8 +34,6 @@ def procesar_imagen_fotografia(ruta_imagen: str) -> str:
     print(f"\n[PREPROCESSOR] Procesando: {ruta_imagen}")
     
     try:
-        img = Image.open(ruta_imagen)
-
         # =====================================
         # CORRECCION DE SOMBRAS
         # =====================================

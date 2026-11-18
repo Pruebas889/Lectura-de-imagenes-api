@@ -4,7 +4,7 @@ Aplicación web y API en Flask para leer facturas desde PDF e imágenes. Extrae 
 
 ## Requisitos
 
-- Python 3.10 o posterior.
+- Python 3.10 o posterior. Las dependencias, las rutas web y el preprocesamiento de imágenes se validaron en Windows con Python 3.10.22 y 3.13.15.
 - Tesseract OCR para procesar imágenes y PDF escaneados.
 - Poppler para convertir páginas de PDF a imágenes (necesario para la vista previa y el OCR de PDF).
 - Groq es opcional; se usa como respaldo si Tesseract y las reglas locales no detectan datos.
@@ -20,10 +20,10 @@ Abre PowerShell en la carpeta del proyecto:
 cd "C:\Users\jcastillol\Documents\Lectura-de-imagenes-api"
 ```
 
-Crea y activa un entorno virtual (si aún no existe) e instala las dependencias:
+Para desplegar en el servidor, selecciona explícitamente Python 3.13; `py -3` selecciona Python 3.15 en ese equipo, versión que aún no se ha validado:
 
 ```powershell
-py -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
@@ -108,7 +108,7 @@ Los archivos subidos desde ambas interfaces se guardan en `documentos` (carpeta 
 
 ## API
 
-Los endpoints están disponibles en `http://127.0.0.1:5000`:
+La base local es `http://127.0.0.1:5000` por defecto. Si iniciaste la aplicación con `PORT=5001`, utiliza `http://127.0.0.1:5001`. Las rutas de esta tabla son relativas a esa base:
 
 | Método | Ruta | Descripción |
 |---|---|---|
@@ -123,6 +123,22 @@ Los endpoints están disponibles en `http://127.0.0.1:5000`:
 | `DELETE` | `/api/facturas` | Borra todas las facturas guardadas. |
 | `POST` | `/api/previsualizar-pdf` | Devuelve una vista previa de la primera página del PDF. |
 | `POST` | `/api/previsualizar-pdf-completo` | Devuelve las páginas del PDF para el visor. |
+
+### Consumir la API desde Postman
+
+1. Inicia la aplicación con `python app.py` y confirma el puerto que muestra la consola. Por defecto es `5000`; si la iniciaste con `PORT=5001`, usa ese puerto.
+2. En Postman, crea una variable de entorno `baseUrl`, por ejemplo `http://127.0.0.1:5001` (o `http://127.0.0.1:5000` si usas el puerto predeterminado).
+3. Para consultar una factura, crea una petición **GET** a `{{baseUrl}}/api/facturas/951`. No requiere body. La respuesta es JSON con los campos guardados.
+
+   La ruta `{{baseUrl}}/factura/951` **no es un endpoint JSON**: sirve la página HTML de detalle para el navegador.
+
+4. Para procesar un documento, crea una petición **POST** a `{{baseUrl}}/api/procesar`. En **Body → form-data**, agrega una fila con la clave `archivo`, cambia su tipo de **Text** a **File** y selecciona un PDF o imagen. No agregues manualmente el encabezado `Content-Type`; Postman lo configura para `multipart/form-data`.
+5. Para procesar varios documentos en una petición, usa **POST** `{{baseUrl}}/api/procesar-lote` y agrega una fila de tipo **File** por cada documento, usando la misma clave `archivos`.
+6. También puedes probar **GET** `{{baseUrl}}/api/facturas` para listar los registros o **GET** `{{baseUrl}}/api/facturas/951/json` para obtener el JSON descargable de una factura.
+
+Una petición de procesamiento individual exitosa responde con `ok: true` y un objeto `datos` que incluye `factura_id`, `nombre_archivo`, `tipo`, `proveedor`, `total`, `fecha`, `banco` y los demás campos extraídos. En el procesamiento por lote la respuesta incluye `total`, `exitosos`, `fallidos` y un resultado por archivo. Si hay un error, revisa el código HTTP y el campo `error` (o el resultado individual fallido en un lote).
+
+La ruta **DELETE** `{{baseUrl}}/api/facturas` borra todos los registros de facturas de la base de datos; úsala con cuidado. No requiere body.
 
 Ejemplo para procesar una factura desde PowerShell:
 
