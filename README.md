@@ -11,7 +11,7 @@ Aplicación web y API en Flask para leer facturas desde PDF e imágenes. Extrae 
 
 En Windows, instala Tesseract (con los datos de idioma español e inglés) y Poppler y asegúrate de que estén en `PATH`, o define las variables `TESSERACT_PATH` y `POPPLER_PATH`. El proyecto busca algunas ubicaciones habituales de Tesseract y Poppler automáticamente. Si no puede encontrar las herramientas, configura sus rutas en `config/settings.py` o mediante esas variables de entorno.
 
-La aplicación web y `main.py` procesan los documentos localmente con Tesseract y reglas de extracción; no envían su contenido a servicios externos. Cuando un campo no se identifica, el JSON muestra `No legible`.
+La aplicación web y `main.py` procesan los documentos localmente con Tesseract y reglas de extracción; no envían su contenido a servicios externos. Las rutas JSON existentes muestran `No legible` cuando un campo no se identifica; la API v1 representa esos valores como `null`.
 
 ## Instalación en Windows
 
@@ -109,9 +109,43 @@ La base local es `http://127.0.0.1:5000` por defecto. Si iniciaste la aplicació
 | `GET` | `/api/facturas/<id>/original` | Abre el documento original guardado para esa factura. |
 | `GET` | `/api/facturas/<id>/miniatura` | Devuelve la miniatura del documento original. |
 | `GET` | `/api/facturas/<id>/previsualizar` | Devuelve todas las páginas como imágenes para el visor. |
+| `GET` | `/api/v1/documentos` | Lista documentos con metadatos resumidos, sin incluir el texto OCR. |
+| `GET` | `/api/v1/documentos/<id>` | Devuelve los datos normalizados y el texto OCR completo de un documento. |
+| `GET` | `/api/v1/documentos/<id>/json` | Descarga el mismo detalle v1 como archivo JSON. |
+| `POST` | `/api/v1/documentos/json/descargar-lote` | Descarga los detalles v1 de varias facturas dentro de un ZIP. |
 | `DELETE` | `/api/facturas` | Borra todas las facturas guardadas. |
 | `POST` | `/api/previsualizar-pdf` | Devuelve una vista previa de la primera página del PDF. |
 | `POST` | `/api/previsualizar-pdf-completo` | Devuelve las páginas del PDF para el visor. |
+
+### Formato JSON de documentos v1
+
+`GET /api/v1/documentos` devuelve una lista liviana con el enlace al archivo original. La fecha de procesamiento se normaliza a ISO 8601:
+
+```json
+{
+  "total": 1,
+  "documentos": [
+    {
+      "id": 26,
+      "archivo": {
+        "nombre": "comprobante.png",
+        "original_url": "/api/facturas/26/original"
+      },
+      "documento": {
+        "tipo": "comprobante_transferencia",
+        "entidad": "Nequi"
+      },
+      "procesamiento": {
+        "fecha": "2026-04-19T10:10:00"
+      }
+    }
+  ]
+}
+```
+
+`GET /api/v1/documentos/26` devuelve además `datos` y `texto_extraido`. Los campos no identificados se representan como `null`. `otros_campos` está reservado para campos variables; actualmente queda vacío porque la base de datos solo persiste los campos normalizados definidos. El archivo original se obtiene por separado desde la ruta indicada en `archivo.original_url`.
+
+El visor JSON del cargue individual y del cargue masivo usa el detalle v1. Sus descargas individuales y el ZIP del lote contienen el mismo formato normalizado. Las rutas heredadas `/api/facturas/<id>/json` y `/api/facturas/json/descargar-lote` conservan su formato anterior.
 
 ### Consumir la API desde Postman
 
@@ -124,6 +158,7 @@ La base local es `http://127.0.0.1:5000` por defecto. Si iniciaste la aplicació
 4. Para procesar un documento, crea una petición **POST** a `{{baseUrl}}/api/procesar`. En **Body → form-data**, agrega una fila con la clave `archivo`, cambia su tipo de **Text** a **File** y selecciona un PDF o imagen. No agregues manualmente el encabezado `Content-Type`; Postman lo configura para `multipart/form-data`.
 5. Para procesar varios documentos en una petición, usa **POST** `{{baseUrl}}/api/procesar-lote` y agrega una fila de tipo **File** por cada documento, usando la misma clave `archivos`.
 6. También puedes probar **GET** `{{baseUrl}}/api/facturas` para listar los registros o **GET** `{{baseUrl}}/api/facturas/951/json` para obtener el JSON descargable de una factura.
+7. Para consumir el formato normalizado, usa **GET** `{{baseUrl}}/api/v1/documentos` para el listado o **GET** `{{baseUrl}}/api/v1/documentos/951` para el detalle con texto OCR.
 
 Una petición de procesamiento individual exitosa responde con `ok: true` y un objeto `datos` que incluye `factura_id`, `nombre_archivo`, `tipo`, `proveedor`, `total`, `fecha`, `banco` y los demás campos extraídos. En el procesamiento por lote la respuesta incluye `total`, `exitosos`, `fallidos` y un resultado por archivo. Si hay un error, revisa el código HTTP y el campo `error` (o el resultado individual fallido en un lote).
 

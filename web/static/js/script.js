@@ -258,7 +258,7 @@ function mostrarEstadoVisorMensaje(texto) {
 }
 
 if (visorSalidaFactura && panelDetalle) {
-    panelDetalle.addEventListener('click', event => {
+    panelDetalle.addEventListener('click', async event => {
         const botonNoLegible = event.target.closest('.btn-dato-no-legible');
         if (botonNoLegible && avisoNoLegible) {
             tituloNoLegible.textContent = `Dato no legible: ${botonNoLegible.dataset.campo}`;
@@ -270,18 +270,39 @@ if (visorSalidaFactura && panelDetalle) {
         if (!boton) return;
 
         const esTexto = boton.dataset.tipoSalida === 'texto';
-        const datos = document.getElementById(
-            esTexto ? 'textoExtraidoFacturaData' : 'jsonFacturaData'
-        );
+        const datos = document.getElementById('textoExtraidoFacturaData');
         if (!datos) return;
 
-        const valor = JSON.parse(datos.textContent);
-        tituloSalidaFactura.textContent = esTexto ? 'Texto extraído' : 'JSON de la factura';
+        tituloSalidaFactura.textContent = esTexto
+            ? 'Texto extraído'
+            : 'JSON de la factura';
         descargarJsonFactura.hidden = esTexto;
-        contenidoSalidaFactura.textContent = esTexto
-            ? (valor || '')
-            : JSON.stringify(valor, null, 2);
         visorSalidaFactura.showModal();
+
+        if (esTexto) {
+            contenidoSalidaFactura.textContent = JSON.parse(datos.textContent) || '';
+            return;
+        }
+
+        const documentoId = boton.dataset.documentoId;
+        if (!documentoId) {
+            contenidoSalidaFactura.textContent = 'No se encontró el identificador del documento.';
+            return;
+        }
+
+        descargarJsonFactura.href = `/api/v1/documentos/${documentoId}/json`;
+        contenidoSalidaFactura.textContent = 'Cargando JSON...';
+        try {
+            const respuesta = await fetch(`/api/v1/documentos/${documentoId}`);
+            const documento = await respuesta.json();
+            if (!respuesta.ok) {
+                throw new Error(documento.error || 'No se pudo cargar el documento.');
+            }
+            contenidoSalidaFactura.textContent = JSON.stringify(documento, null, 2);
+        } catch (error) {
+            contenidoSalidaFactura.textContent =
+                `No se pudo cargar el JSON del documento: ${error.message}`;
+        }
     });
 
     document.getElementById('cerrarSalidaFactura').addEventListener('click', () => {

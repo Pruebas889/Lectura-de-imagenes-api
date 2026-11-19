@@ -57,6 +57,8 @@ def evitar_cache_historial_facturas(response):
         request.path == "/individual"
         or request.path.startswith("/factura/")
         or request.path == "/api/facturas"
+        or request.path == "/api/v1/documentos"
+        or request.path.startswith("/api/v1/documentos/")
         or request.path == "/cargue-masivo"
         or request.path == "/historial"
     ):

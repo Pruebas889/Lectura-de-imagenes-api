@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 import zipfile
+from datetime import datetime
 from flask import jsonify, request, send_file
 from io import BytesIO
 from pdf2image import convert_from_bytes, convert_from_path
@@ -329,15 +330,102 @@ def api_detalle(factura_id):
     return jsonify(dict(factura))
 
 
+def _valor_api(valor):
+    return None if valor in (None, "") else valor
+
+
+def _fecha_api(valor):
+    if hasattr(valor, "isoformat"):
+        return valor.isoformat()
+    if isinstance(valor, str):
+        try:
+            return datetime.fromisoformat(valor).isoformat()
+        except ValueError:
+            return valor
+    return valor
+
+
+def _resumen_documento_api(factura):
+    fila = dict(factura)
+    documento_id = fila["id"]
+    return {
+        "id": documento_id,
+        "archivo": {
+            "nombre": fila["nombre_archivo"],
+            "original_url": f"/api/facturas/{documento_id}/original"
+        },
+        "documento": {
+            "tipo": _valor_api(fila.get("tipo_pdf")),
+            "entidad": _valor_api(fila.get("banco"))
+        },
+        "procesamiento": {
+            "fecha": _fecha_api(fila.get("fecha_procesado"))
+        }
+    }
+
+
+def _detalle_documento_api(factura):
+    fila = dict(factura)
+    documento = _resumen_documento_api(fila)
+    documento["datos"] = {
+        "proveedor": _valor_api(fila.get("proveedor")),
+        "nit": _valor_api(fila.get("nit_proveedor")),
+        "total": _valor_api(fila.get("total")),
+        "fecha": _valor_api(fila.get("fecha")),
+        "hora": _valor_api(fila.get("hora")),
+        "estado_transaccion": _valor_api(fila.get("estado_transaccion")),
+        "referencia": _valor_api(fila.get("referencia")),
+        "numero_autorizacion": _valor_api(fila.get("numero_autorizacion")),
+        "punto_recaudo": _valor_api(fila.get("punto_recaudo"))
+    }
+    documento["otros_campos"] = {}
+    documento["texto_extraido"] = _valor_api(fila.get("texto_extraido"))
+    return documento
+
+
+def api_v1_listar_documentos():
+    """Lista documentos con un resumen sin el texto OCR completo."""
+    documentos = [_resumen_documento_api(f) for f in obtener_todas()]
+    return jsonify({
+        "total": len(documentos),
+        "documentos": documentos
+    })
+
+
+def api_v1_detalle_documento(documento_id):
+    """Devuelve los datos normalizados y el texto OCR de un documento."""
+    factura = obtener_por_id(documento_id)
+    if not factura:
+        return jsonify({"error": "Documento no encontrado"}), 404
+    return jsonify(_detalle_documento_api(factura))
+
+
 def api_descargar_json_factura(factura_id):
     """Descarga los datos extraídos de una factura como archivo JSON."""
     factura = obtener_por_id(factura_id)
     if not factura:
         return jsonify({"error": "No encontrada"}), 404
 
-    datos = _datos_json_factura(factura)
+    return _respuesta_json_descargable(factura, _datos_json_factura, factura_id)
+
+
+def api_v1_descargar_json_documento(documento_id):
+    """Descarga el detalle normalizado v1 de un documento."""
+    factura = obtener_por_id(documento_id)
+    if not factura:
+        return jsonify({"error": "Documento no encontrado"}), 404
+
+    return _respuesta_json_descargable(
+        factura,
+        _detalle_documento_api,
+        documento_id
+    )
+
+
+def _respuesta_json_descargable(factura, serializador, documento_id):
+    datos = serializador(factura)
     nombre = secure_filename(os.path.splitext(factura["nombre_archivo"])[0])
-    nombre_descarga = f"{nombre or f'factura-{factura_id}'}.json"
+    nombre_descarga = f"{nombre or f'factura-{documento_id}'}.json"
     contenido = BytesIO(
         json.dumps(datos, ensure_ascii=False, indent=2).encode("utf-8")
     )
@@ -369,8 +457,7 @@ def _datos_json_factura(factura):
     }
 
 
-def api_descargar_json_lote():
-    """Descarga los JSON de las facturas indicadas dentro de una carpeta ZIP."""
+def _descargar_json_lote(serializador):
     solicitud = request.get_json(silent=True)
     factura_ids = solicitud.get("factura_ids") if isinstance(solicitud, dict) else None
     if not isinstance(factura_ids, list) or not factura_ids:
@@ -412,7 +499,7 @@ def api_descargar_json_lote():
             archivo_zip.writestr(
                 ruta_json,
                 json.dumps(
-                    _datos_json_factura(factura),
+                    serializador(factura),
                     ensure_ascii=False,
                     indent=2
                 )
@@ -425,6 +512,16 @@ def api_descargar_json_lote():
         as_attachment=True,
         download_name="Facturas JSON.zip"
     )
+
+
+def api_descargar_json_lote():
+    """Descarga los JSON heredados de las facturas indicadas dentro de un ZIP."""
+    return _descargar_json_lote(_datos_json_factura)
+
+
+def api_v1_descargar_json_lote():
+    """Descarga los JSON normalizados v1 dentro de una carpeta ZIP."""
+    return _descargar_json_lote(_detalle_documento_api)
 
 
 def api_borrar_historial():
@@ -481,6 +578,30 @@ def registrar_rutas(app):
         "/api/facturas",
         view_func=api_listar,
         methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/v1/documentos",
+        view_func=api_v1_listar_documentos,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/v1/documentos/<int:documento_id>",
+        view_func=api_v1_detalle_documento,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/v1/documentos/<int:documento_id>/json",
+        view_func=api_v1_descargar_json_documento,
+        methods=["GET"]
+    )
+
+    app.add_url_rule(
+        "/api/v1/documentos/json/descargar-lote",
+        view_func=api_v1_descargar_json_lote,
+        methods=["POST"]
     )
 
     app.add_url_rule(

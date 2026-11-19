@@ -274,16 +274,31 @@ function crearBotonVer(etiqueta, tipoSalida, claveSalida) {
     return boton;
 }
 
-function mostrarSalidaMasiva(tipoSalida, claveSalida) {
+async function mostrarSalidaMasiva(tipoSalida, claveSalida) {
     const salida = salidasProcesadas.get(claveSalida);
     if (!salida) return;
     tituloSalidaMasiva.textContent = tipoSalida === 'texto'
         ? `Texto extraído: ${salida.archivo}`
         : `JSON: ${salida.archivo}`;
-    contenidoSalidaMasiva.textContent = tipoSalida === 'texto'
-        ? salida.texto
-        : JSON.stringify(salida.json, null, 2);
     visorSalidaMasiva.showModal();
+
+    if (tipoSalida === 'texto') {
+        contenidoSalidaMasiva.textContent = salida.texto;
+        return;
+    }
+
+    contenidoSalidaMasiva.textContent = 'Cargando JSON...';
+    try {
+        const respuesta = await fetch(`/api/v1/documentos/${salida.facturaId}`);
+        const documento = await respuesta.json();
+        if (!respuesta.ok) {
+            throw new Error(documento.error || 'No se pudo cargar el documento.');
+        }
+        contenidoSalidaMasiva.textContent = JSON.stringify(documento, null, 2);
+    } catch (error) {
+        contenidoSalidaMasiva.textContent =
+            `No se pudo cargar el JSON del documento: ${error.message}`;
+    }
 }
 
 filasMasivas.addEventListener('click', event => {
@@ -680,27 +695,10 @@ async function procesarArchivo(archivoSeleccionado, indice, total) {
 
         const facturaId = resultado.datos.factura_id;
         const claveSalida = String(indice);
-        const datosJson = {
-            tipo: resultado.datos.tipo || '',
-            proveedor: resultado.datos.proveedor || '',
-            nit_proveedor: resultado.datos.nit_proveedor || '',
-            total: resultado.datos.total || '',
-            estado_transaccion: resultado.datos.estado_transaccion || '',
-            fecha: resultado.datos.fecha || '',
-            hora: resultado.datos.hora || '',
-            referencia: resultado.datos.referencia || '',
-            numero_autorizacion: resultado.datos.numero_autorizacion || '',
-            punto_recaudo: resultado.datos.punto_recaudo || '',
-            banco: resultado.datos.banco || ''
-        };
         salidasProcesadas.set(claveSalida, {
+            facturaId,
             archivo: resultado.datos.nombre_archivo || archivoSeleccionado.archivo.name,
-            texto: resultado.datos.texto_extraido || '',
-            json: {
-                ok: true,
-                archivo: resultado.datos.nombre_archivo || archivoSeleccionado.archivo.name,
-                datos: datosJson
-            }
+            texto: resultado.datos.texto_extraido || ''
         });
         facturasProcesadas.push(facturaId);
         btnDescargarJsonMasivo.disabled = false;
@@ -725,7 +723,7 @@ async function procesarArchivo(archivoSeleccionado, indice, total) {
         const celdaJson = filaResultado.querySelector('.json-fila-masiva');
         const botonVerJson = crearBotonVer('Ver', 'json', claveSalida);
         const enlaceJson = document.createElement('a');
-        enlaceJson.href = `/api/facturas/${facturaId}/json`;
+        enlaceJson.href = `/api/v1/documentos/${facturaId}/json`;
         enlaceJson.download = '';
         enlaceJson.textContent = 'Descargar';
         enlaceJson.title = 'Descargar el JSON de esta factura';
@@ -758,7 +756,7 @@ btnDescargarJsonMasivo.addEventListener('click', async () => {
     mostrarBotonProcesando(btnDescargarJsonMasivo, 'Preparando descarga...');
 
     try {
-        const respuesta = await fetch('/api/facturas/json/descargar-lote', {
+        const respuesta = await fetch('/api/v1/documentos/json/descargar-lote', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ factura_ids: facturasProcesadas })

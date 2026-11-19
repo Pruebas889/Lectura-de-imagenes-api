@@ -159,30 +159,19 @@
                             <td>{{ dato_factura(factura_seleccionada['banco'], 'Banco') }}</td>
                             <td><button type="button" class="btn-ver-salida" data-tipo-salida="texto" title="Ver el texto extraído de la factura">Ver</button></td>
                             <td>
-                                <button type="button" class="btn-ver-salida" data-tipo-salida="json" title="Ver los datos de la factura en formato JSON">Ver</button>
+                                <button
+                                    type="button"
+                                    class="btn-ver-salida"
+                                    data-tipo-salida="json"
+                                    data-documento-id="{{ factura_seleccionada['id'] }}"
+                                    title="Ver los datos de la factura en formato JSON"
+                                >Ver</button>
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             <script type="application/json" id="textoExtraidoFacturaData">{{ factura_seleccionada['texto_extraido'] | tojson }}</script>
-            <script type="application/json" id="jsonFacturaData">{{ {
-                "ok": true,
-                "archivo": factura_seleccionada['nombre_archivo'],
-                "datos": {
-                    "tipo": factura_seleccionada['tipo_pdf'],
-                    "proveedor": factura_seleccionada['proveedor'] or "",
-                    "nit_proveedor": factura_seleccionada['nit_proveedor'] or "",
-                    "total": factura_seleccionada['total'] or "No legible",
-                    "estado_transaccion": factura_seleccionada['estado_transaccion'] or "No legible",
-                    "fecha": factura_seleccionada['fecha'] or "No legible",
-                    "hora": factura_seleccionada['hora'] or "No legible",
-                    "referencia": factura_seleccionada['referencia'] or "No legible",
-                    "numero_autorizacion": factura_seleccionada['numero_autorizacion'] or "No legible",
-                    "punto_recaudo": factura_seleccionada['punto_recaudo'] or "No legible",
-                    "banco": factura_seleccionada['banco'] or "No legible"
-                }
-            } | tojson }}</script>
         {% else %}
             <div class="detalle-vacio">
                 <img
@@ -239,7 +228,7 @@
             <a
                 class="btn-descargar-json-tabla"
                 id="descargarJsonFactura"
-                href="/api/facturas/{{ factura_seleccionada['id'] if factura_seleccionada else '' }}/json"
+                href="/api/v1/documentos/{{ factura_seleccionada['id'] if factura_seleccionada else '' }}/json"
                 title="Descargar el JSON de esta factura"
                 hidden
             >Descargar JSON</a>
@@ -278,6 +267,6 @@
     </div>
 </dialog>
 
-<script src="{{ url_for('static', filename='js/script.js', v='20261118-4') }}"></script>
+<script src="{{ url_for('static', filename='js/script.js', v='20261119-1') }}"></script>
 </body>
 </html>
