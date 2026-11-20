@@ -10,7 +10,7 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-4') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261120-1') }}">
 </head>
 <body class="pantalla-historial">
 <h1>
@@ -41,15 +41,15 @@
 <main class="panel-historial-pagina">
     <section class="panel-lista" aria-label="Historial de facturas">
         <div class="encabezado-historial">
-            <h2>Facturas guardadas <span>({{ facturas|length }})</span></h2>
+            <h2>Facturas guardadas <span>({{ total_facturas }})</span></h2>
             {% if facturas %}
             <button
                 class="btn-seleccionar-masivo btn-descargar-json-masivo"
                 id="btnDescargarJsonHistorial"
                 type="button"
                 data-factura-ids="{{ facturas|map(attribute='id')|list|tojson }}"
-                aria-label="Descargar todos los JSON"
-                title="Descargar todos los JSON"
+                aria-label="Descargar JSON de esta página"
+                title="Descargar JSON de esta página"
             >
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -70,6 +70,17 @@
             <p class="vacio">Aún no hay facturas guardadas.</p>
             {% endfor %}
         </div>
+        {% if total_paginas > 1 %}
+        <nav class="paginacion-historial" aria-label="Paginación del historial">
+            <span>Página {{ pagina }} de {{ total_paginas }}</span>
+            {% if pagina > 1 %}
+            <a href="{{ url_for('historial', pagina=pagina - 1) }}" rel="prev">Anterior</a>
+            {% endif %}
+            {% if pagina < total_paginas %}
+            <a href="{{ url_for('historial', pagina=pagina + 1) }}" rel="next">Siguiente</a>
+            {% endif %}
+        </nav>
+        {% endif %}
         <div class="acciones-historial">
             <p id="estadoDescargaHistorial" role="status" hidden></p>
             {% if facturas %}
@@ -115,6 +126,6 @@
         actualizarTema();
     });
 </script>
-<script src="{{ url_for('static', filename='js/historial.js', v='20261112-2') }}" defer></script>
+<script src="{{ url_for('static', filename='js/historial.js', v='20261120-1') }}" defer></script>
 </body>
 </html>

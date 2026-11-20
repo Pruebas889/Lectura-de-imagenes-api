@@ -10,7 +10,7 @@
             localStorage.getItem('tema-facturas') ||
             (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261118-6') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261120-1') }}">
 </head>
 <body class="pantalla-masiva">
 <h1>
@@ -124,6 +124,11 @@
                 </tbody>
             </table>
         </div>
+        <nav class="paginacion-masiva" id="paginacionArchivosMasiva" aria-label="Páginas de archivos seleccionados" hidden>
+            <button type="button" id="paginaArchivosAnterior" aria-label="Página anterior">Anterior</button>
+            <span id="textoPaginaArchivos"></span>
+            <button type="button" id="paginaArchivosSiguiente" aria-label="Página siguiente">Siguiente</button>
+        </nav>
     </section>
 
     <div class="pie-masivo">
@@ -174,6 +179,6 @@
         actualizarTema();
     });
 </script>
-<script src="{{ url_for('static', filename='js/masivo.js', v='20261119-1') }}" defer></script>
+<script src="{{ url_for('static', filename='js/masivo.js', v='20261120-2') }}" defer></script>
 </body>
 </html>

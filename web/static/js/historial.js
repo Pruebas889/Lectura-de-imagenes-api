@@ -69,7 +69,7 @@ if (btnDescargarJsonHistorial) {
         mostrarBotonCargando(btnDescargarJsonHistorial, 'Preparando descarga...');
 
         try {
-            const respuesta = await fetch('/api/facturas/json/descargar-lote', {
+            const respuesta = await fetch('/api/v1/documentos/json/descargar-lote', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ factura_ids: facturaIds })

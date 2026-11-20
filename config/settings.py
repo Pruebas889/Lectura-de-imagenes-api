@@ -12,7 +12,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #carpeta donde se guardan los pdfs
 
 PDF_FOLDER = os.path.join(BASE_DIR, "pdfs")
-DOCUMENT_FOLDER = os.path.join(BASE_DIR, "documentos")
+DOCUMENT_FOLDER = os.environ.get("DOCUMENT_FOLDER") or os.path.join(
+    BASE_DIR,
+    "documentos"
+)
 
 DB_PATH = os.path.join(BASE_DIR, "database", "facturas.db")
 

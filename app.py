@@ -1,6 +1,6 @@
 import os
 import sys
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
 
 
 def _configurar_stdout_utf8():
@@ -35,7 +35,12 @@ def _configurar_stdout_utf8():
 
 _configurar_stdout_utf8()
 
-from database.db_manager import crear_tabla, obtener_todas, obtener_por_id
+from database.db_manager import (
+    crear_tabla,
+    obtener_resumenes,
+    obtener_por_id,
+    contar_facturas
+)
 from controllers.api_controller import registrar_rutas
 from config.settings import MAX_UPLOAD_BYTES
 
@@ -90,9 +95,27 @@ def cargue_masivo():
 
 @app.route("/historial")
 def historial():
+    try:
+        pagina = int(request.args.get("pagina", "1"))
+    except ValueError:
+        abort(400, description="'pagina' debe ser un número entero.")
+    if pagina < 1:
+        abort(400, description="'pagina' debe ser mayor que 0.")
+
+    por_pagina = 50
+    total = contar_facturas()
+    total_paginas = max(1, (total + por_pagina - 1) // por_pagina)
+    pagina = min(pagina, total_paginas)
+    facturas = obtener_resumenes(
+        limit=por_pagina,
+        offset=(pagina - 1) * por_pagina
+    )
     return render_template(
         "historial.html",
-        facturas=obtener_todas()
+        facturas=facturas,
+        total_facturas=total,
+        pagina=pagina,
+        total_paginas=total_paginas
     )
 
 

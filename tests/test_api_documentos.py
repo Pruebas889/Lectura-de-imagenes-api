@@ -43,8 +43,13 @@ def test_v1_lista_resumen_sin_texto_ocr(monkeypatch):
     }
     monkeypatch.setattr(
         api_controller,
-        "obtener_todas",
-        lambda: [factura_mysql, factura_sqlite]
+        "contar_facturas",
+        lambda: 2
+    )
+    monkeypatch.setattr(
+        api_controller,
+        "obtener_resumenes",
+        lambda limit=None, offset=0: [factura_mysql, factura_sqlite]
     )
     cliente = _cliente_api()
 
@@ -68,6 +73,41 @@ def test_v1_lista_resumen_sin_texto_ocr(monkeypatch):
     assert "texto_extraido" not in documento
     assert "datos" not in documento
     assert documento_sqlite["procesamiento"]["fecha"] == "2026-04-19T10:11:00"
+
+
+def test_v1_lista_pagina_sin_cargar_todo(monkeypatch):
+    factura = _factura()
+    llamadas = []
+
+    def obtener_pagina(limit=None, offset=0):
+        llamadas.append((limit, offset))
+        return [factura]
+
+    monkeypatch.setattr(api_controller, "contar_facturas", lambda: 250)
+    monkeypatch.setattr(api_controller, "obtener_resumenes", obtener_pagina)
+    cliente = _cliente_api()
+
+    respuesta = cliente.get("/api/v1/documentos?pagina=3&por_pagina=100")
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.get_json()
+    assert cuerpo["total"] == 250
+    assert cuerpo["paginacion"] == {
+        "pagina": 3,
+        "por_pagina": 100,
+        "total_paginas": 3
+    }
+    assert llamadas == [(100, 200)]
+
+
+def test_v1_lista_rechaza_paginacion_invalida(monkeypatch):
+    monkeypatch.setattr(api_controller, "contar_facturas", lambda: 1)
+    cliente = _cliente_api()
+
+    respuesta = cliente.get("/api/v1/documentos?pagina=0&por_pagina=100")
+
+    assert respuesta.status_code == 400
+    assert "error" in respuesta.get_json()
 
 
 def test_v1_detalle_incluye_datos_texto_y_nulos(monkeypatch):
@@ -122,6 +162,14 @@ def test_v1_descarga_lote_incluye_el_detalle_normalizado(monkeypatch):
     factura = _factura()
     monkeypatch.setattr(
         api_controller,
+        "obtener_por_ids",
+        lambda documento_ids: [
+            factura for documento_id in documento_ids
+            if documento_id == factura["id"]
+        ]
+    )
+    monkeypatch.setattr(
+        api_controller,
         "obtener_por_id",
         lambda documento_id: factura if documento_id == factura["id"] else None
     )
@@ -139,3 +187,32 @@ def test_v1_descarga_lote_incluye_el_detalle_normalizado(monkeypatch):
         assert len(nombres) == 1
         datos_json = json.loads(archivo_zip.read(nombres[0]))
     assert datos_json == cliente.get("/api/v1/documentos/7").get_json()
+
+
+def test_v1_descarga_lote_consulta_ids_en_bloques_de_500(monkeypatch):
+    facturas = {
+        factura_id: {
+            **_factura(),
+            "id": factura_id,
+            "nombre_archivo": f"comprobante-{factura_id}.png"
+        }
+        for factura_id in range(1, 502)
+    }
+    tamanos_lotes = []
+
+    def obtener_por_ids(factura_ids):
+        tamanos_lotes.append(len(factura_ids))
+        return [facturas[factura_id] for factura_id in factura_ids]
+
+    monkeypatch.setattr(api_controller, "obtener_por_ids", obtener_por_ids)
+    cliente = _cliente_api()
+
+    respuesta = cliente.post(
+        "/api/v1/documentos/json/descargar-lote",
+        json={"factura_ids": list(facturas)}
+    )
+
+    assert respuesta.status_code == 200
+    assert tamanos_lotes == [500, 1]
+    with zipfile.ZipFile(BytesIO(respuesta.data)) as archivo_zip:
+        assert len(archivo_zip.namelist()) == 501

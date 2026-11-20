@@ -10,6 +10,10 @@ const temporizadorMasivo = document.getElementById('temporizadorMasivo');
 const duracionMasiva = document.getElementById('duracionMasiva');
 const contadorMasivo = document.getElementById('contadorMasivo');
 const filasMasivas = document.getElementById('filasMasivas');
+const paginacionArchivosMasiva = document.getElementById('paginacionArchivosMasiva');
+const paginaArchivosAnterior = document.getElementById('paginaArchivosAnterior');
+const paginaArchivosSiguiente = document.getElementById('paginaArchivosSiguiente');
+const textoPaginaArchivos = document.getElementById('textoPaginaArchivos');
 const btnDescargarJsonMasivo = document.getElementById('btnDescargarJsonMasivo');
 const contenidoInicialBotonDescarga = Array.from(btnDescargarJsonMasivo.childNodes, nodo =>
     nodo.cloneNode(true)
@@ -27,6 +31,7 @@ const cancelarSalidaMasiva = document.getElementById('cancelarSalidaMasiva');
 const aceptarSalidaMasiva = document.getElementById('aceptarSalidaMasiva');
 const btnRevertirMasivo = document.getElementById('btnRevertirMasivo');
 const extensionesPermitidas = /\.(pdf|jpe?g|png|webp|bmp|tiff?)$/i;
+const filasPorPaginaMasiva = 100;
 const camposFactura = [
     ['proveedor', 'Proveedor'],
     ['nit_proveedor', 'NIT proveedor'],
@@ -41,8 +46,10 @@ const camposFactura = [
 ];
 
 let archivosSeleccionados = [];
+let paginaArchivosActual = 0;
 let facturasProcesadas = [];
 const salidasProcesadas = new Map();
+const estadosFilasMasivas = new Map();
 const urlsLocales = new Map();
 let procesando = false;
 let selectorCarpetaPendiente = false;
@@ -150,8 +157,10 @@ function revertirLote() {
     if (procesando) return;
     liberarUrlsLocales();
     archivosSeleccionados = [];
+    paginaArchivosActual = 0;
     facturasProcesadas = [];
     salidasProcesadas.clear();
+    estadosFilasMasivas.clear();
     inputCarpetaMasiva.value = '';
     temporizadorMasivo.textContent = '00:00:000';
     duracionMasiva.hidden = true;
@@ -175,6 +184,7 @@ function revertirLote() {
     mostrarEstadoSeleccionCarpeta('', 'Subir');
     actualizarContador(0);
     mostrarFilaVacia('Selecciona documentos para comenzar.');
+    actualizarPaginacionArchivos();
     zonaMasiva.classList.remove('procesando-masivo');
 }
 
@@ -186,6 +196,48 @@ function mostrarFilaVacia(mensaje) {
     celda.textContent = mensaje;
     fila.append(celda);
     filasMasivas.replaceChildren(fila);
+}
+
+function actualizarPaginacionArchivos() {
+    const total = archivosSeleccionados.length;
+    const paginas = Math.ceil(total / filasPorPaginaMasiva);
+    paginacionArchivosMasiva.hidden = paginas <= 1;
+    textoPaginaArchivos.textContent = paginas > 0
+        ? `Página ${paginaArchivosActual + 1} de ${paginas}`
+        : '';
+    paginaArchivosAnterior.disabled = paginaArchivosActual === 0;
+    paginaArchivosSiguiente.disabled = paginaArchivosActual >= paginas - 1;
+}
+
+paginaArchivosAnterior.addEventListener('click', () => {
+    if (paginaArchivosActual === 0) return;
+    paginaArchivosActual -= 1;
+    renderizarPaginaArchivos();
+});
+
+paginaArchivosSiguiente.addEventListener('click', () => {
+    const totalPaginas = Math.ceil(
+        archivosSeleccionados.length / filasPorPaginaMasiva
+    );
+    if (paginaArchivosActual >= totalPaginas - 1) return;
+    paginaArchivosActual += 1;
+    renderizarPaginaArchivos();
+});
+
+function renderizarPaginaArchivos() {
+    liberarUrlsLocales();
+    const inicio = paginaArchivosActual * filasPorPaginaMasiva;
+    const fin = Math.min(inicio + filasPorPaginaMasiva, archivosSeleccionados.length);
+    if (fin <= inicio) {
+        mostrarFilaVacia('Selecciona documentos para comenzar.');
+    } else {
+        filasMasivas.replaceChildren(
+            ...archivosSeleccionados
+                .slice(inicio, fin)
+                .map((archivo, posicion) => crearFila(archivo, inicio + posicion))
+        );
+    }
+    actualizarPaginacionArchivos();
 }
 
 function actualizarContador(cantidad, total = null) {
@@ -208,41 +260,81 @@ function actualizarContador(cantidad, total = null) {
 function crearFila(archivoSeleccionado, indice) {
     const fila = document.createElement('tr');
     fila.dataset.indice = String(indice);
+    const resultado = estadosFilasMasivas.get(indice);
 
     const nombre = document.createElement('td');
     nombre.className = 'archivo-masivo';
-    const urlLocal = URL.createObjectURL(archivoSeleccionado.archivo);
-    urlsLocales.set(indice, urlLocal);
-    agregarEnlace(nombre, archivoSeleccionado.nombre, urlLocal);
+    if (resultado && resultado.facturaId) {
+        agregarEnlace(
+            nombre,
+            archivoSeleccionado.nombre,
+            `/api/facturas/${resultado.facturaId}/original`
+        );
+    } else {
+        const urlLocal = URL.createObjectURL(archivoSeleccionado.archivo);
+        urlsLocales.set(indice, urlLocal);
+        agregarEnlace(nombre, archivoSeleccionado.nombre, urlLocal);
+    }
 
     const tipo = document.createElement('td');
     tipo.textContent = archivoSeleccionado.archivo.name.split('.').pop().toUpperCase();
 
     const estado = document.createElement('td');
     estado.className = 'estado-fila-masiva';
-    estado.textContent = 'Pendiente';
+    const estadoActual = resultado?.estado || 'pendiente';
+    const mensajeEstado = resultado?.mensaje || 'Pendiente';
+    const etiquetaEstado = document.createElement('span');
+    etiquetaEstado.className = `estado-etiqueta estado-${estadoActual}`;
+    etiquetaEstado.textContent = mensajeEstado;
+    estado.append(etiquetaEstado);
+    if (resultado?.error) {
+        const detalle = document.createElement('span');
+        detalle.className = 'detalle-error-masivo';
+        detalle.textContent = resultado.error;
+        estado.append(detalle);
+    }
 
     const celdasDatos = camposFactura.map(([campo]) => {
         const celda = document.createElement('td');
         celda.className = `dato-factura-masiva dato-${campo}`;
-        celda.textContent = '—';
+        celda.textContent = resultado?.datos?.[campo] || '—';
         return celda;
     });
 
     const texto = document.createElement('td');
     texto.className = 'texto-fila-masiva';
-    texto.textContent = '—';
+    if (resultado?.facturaId) {
+        texto.append(crearBotonVer('Ver', 'texto', String(indice)));
+    } else {
+        texto.textContent = '—';
+    }
 
     const json = document.createElement('td');
     json.className = 'json-fila-masiva';
-    json.textContent = '—';
+    if (resultado?.facturaId) {
+        json.append(crearBotonVer('Ver', 'json', String(indice)));
+        const enlaceJson = document.createElement('a');
+        enlaceJson.href = `/api/v1/documentos/${resultado.facturaId}/json`;
+        enlaceJson.download = '';
+        enlaceJson.textContent = 'Descargar';
+        enlaceJson.title = 'Descargar el JSON de esta factura';
+        json.append(enlaceJson);
+    } else {
+        json.textContent = '—';
+    }
 
     fila.append(nombre, tipo, estado, ...celdasDatos, texto, json);
     return fila;
 }
 
 function actualizarFila(indice, estado, mensaje) {
+    const resultado = estadosFilasMasivas.get(indice) || {};
+    resultado.estado = estado;
+    resultado.mensaje = mensaje;
+    if (estado !== 'error') delete resultado.error;
+    estadosFilasMasivas.set(indice, resultado);
     const fila = filasMasivas.querySelector(`tr[data-indice="${indice}"]`);
+    if (!fila) return null;
     fila.classList.remove('fila-cargando');
     const celdaEstado = fila.querySelector('.estado-fila-masiva');
     celdaEstado.replaceChildren();
@@ -258,6 +350,12 @@ function actualizarFila(indice, estado, mensaje) {
         etiquetaEstado.textContent = mensaje;
     }
     celdaEstado.append(etiquetaEstado);
+    if (resultado.error) {
+        const detalle = document.createElement('span');
+        detalle.className = 'detalle-error-masivo';
+        detalle.textContent = resultado.error;
+        celdaEstado.append(detalle);
+    }
     return fila;
 }
 
@@ -287,14 +385,18 @@ async function mostrarSalidaMasiva(tipoSalida, claveSalida) {
         return;
     }
 
-    contenidoSalidaMasiva.textContent = 'Cargando JSON...';
+    contenidoSalidaMasiva.textContent = tipoSalida === 'texto'
+        ? 'Cargando texto extraído...'
+        : 'Cargando JSON...';
     try {
         const respuesta = await fetch(`/api/v1/documentos/${salida.facturaId}`);
         const documento = await respuesta.json();
         if (!respuesta.ok) {
             throw new Error(documento.error || 'No se pudo cargar el documento.');
         }
-        contenidoSalidaMasiva.textContent = JSON.stringify(documento, null, 2);
+        contenidoSalidaMasiva.textContent = tipoSalida === 'texto'
+            ? documento.texto_extraido || ''
+            : JSON.stringify(documento, null, 2);
     } catch (error) {
         contenidoSalidaMasiva.textContent =
             `No se pudo cargar el JSON del documento: ${error.message}`;
@@ -437,8 +539,10 @@ function seleccionarArchivos(archivos, ignorarNoSoportados = false) {
     function rechazarSeleccion(mensaje) {
         liberarUrlsLocales();
         archivosSeleccionados = [];
+        paginaArchivosActual = 0;
         facturasProcesadas = [];
         salidasProcesadas.clear();
+        estadosFilasMasivas.clear();
         inicioProcesamiento = null;
         temporizadorMasivo.textContent = '00:00:000';
         duracionMasiva.hidden = true;
@@ -451,6 +555,7 @@ function seleccionarArchivos(archivos, ignorarNoSoportados = false) {
         btnSeleccionarCarpeta.disabled = false;
         actualizarContador(0);
         mostrarFilaVacia('Corrige la selección para continuar.');
+        actualizarPaginacionArchivos();
         zonaMasiva.classList.remove('procesando-masivo');
     }
 
@@ -482,15 +587,15 @@ function seleccionarArchivos(archivos, ignorarNoSoportados = false) {
 
     liberarUrlsLocales();
     archivosSeleccionados = validos;
+    paginaArchivosActual = 0;
     btnSeleccionarCarpeta.disabled = true;
     facturasProcesadas = [];
     salidasProcesadas.clear();
+    estadosFilasMasivas.clear();
     btnDescargarJsonMasivo.disabled = true;
     estadoDescargaMasiva.hidden = true;
     estadoDescargaMasiva.textContent = '';
-    filasMasivas.replaceChildren(
-        ...archivosSeleccionados.map(crearFila)
-    );
+    renderizarPaginaArchivos();
     actualizarContador(archivosSeleccionados.length);
     const resumenOmitidos = omitidos
         ? ` Se omitieron ${omitidos} archivos no compatibles.`
@@ -695,52 +800,63 @@ async function procesarArchivo(archivoSeleccionado, indice, total) {
 
         const facturaId = resultado.datos.factura_id;
         const claveSalida = String(indice);
+        estadosFilasMasivas.set(indice, {
+            estado: 'exito',
+            mensaje: 'Leída',
+            facturaId,
+            datos: Object.fromEntries(
+                camposFactura.map(([campo]) => [campo, resultado.datos[campo]])
+            )
+        });
         salidasProcesadas.set(claveSalida, {
             facturaId,
-            archivo: resultado.datos.nombre_archivo || archivoSeleccionado.archivo.name,
-            texto: resultado.datos.texto_extraido || ''
+            archivo: resultado.datos.nombre_archivo || archivoSeleccionado.archivo.name
         });
         facturasProcesadas.push(facturaId);
         btnDescargarJsonMasivo.disabled = false;
         const filaResultado = actualizarFila(indice, 'exito', 'Leída');
-        camposFactura.forEach(([campo]) => {
-            filaResultado.querySelector(`.dato-${campo}`).textContent =
-                resultado.datos[campo] || '—';
-        });
-        filaResultado.querySelector('.texto-fila-masiva').replaceChildren(
-            crearBotonVer('Ver', 'texto', claveSalida)
-        );
-        agregarEnlace(
-            filaResultado.querySelector('.archivo-masivo'),
-            archivoSeleccionado.nombre,
-            `/api/facturas/${facturaId}/original`
-        );
-        const urlLocal = urlsLocales.get(indice);
-        if (urlLocal) {
-            URL.revokeObjectURL(urlLocal);
-            urlsLocales.delete(indice);
+        if (filaResultado) {
+            camposFactura.forEach(([campo]) => {
+                filaResultado.querySelector(`.dato-${campo}`).textContent =
+                    resultado.datos[campo] || '—';
+            });
+            filaResultado.querySelector('.texto-fila-masiva').replaceChildren(
+                crearBotonVer('Ver', 'texto', claveSalida)
+            );
+            agregarEnlace(
+                filaResultado.querySelector('.archivo-masivo'),
+                archivoSeleccionado.nombre,
+                `/api/facturas/${facturaId}/original`
+            );
+            const urlLocal = urlsLocales.get(indice);
+            if (urlLocal) {
+                URL.revokeObjectURL(urlLocal);
+                urlsLocales.delete(indice);
+            }
+            const celdaJson = filaResultado.querySelector('.json-fila-masiva');
+            const botonVerJson = crearBotonVer('Ver', 'json', claveSalida);
+            const enlaceJson = document.createElement('a');
+            enlaceJson.href = `/api/v1/documentos/${facturaId}/json`;
+            enlaceJson.download = '';
+            enlaceJson.textContent = 'Descargar';
+            enlaceJson.title = 'Descargar el JSON de esta factura';
+            celdaJson.replaceChildren(botonVerJson, enlaceJson);
         }
-        const celdaJson = filaResultado.querySelector('.json-fila-masiva');
-        const botonVerJson = crearBotonVer('Ver', 'json', claveSalida);
-        const enlaceJson = document.createElement('a');
-        enlaceJson.href = `/api/v1/documentos/${facturaId}/json`;
-        enlaceJson.download = '';
-        enlaceJson.textContent = 'Descargar';
-        enlaceJson.title = 'Descargar el JSON de esta factura';
-        celdaJson.replaceChildren(botonVerJson, enlaceJson);
         return true;
     } catch (error) {
+        estadosFilasMasivas.set(indice, {
+            estado: 'error',
+            mensaje: 'Error',
+            error: error.message || 'No se pudo conectar al servidor.'
+        });
         const filaError = actualizarFila(indice, 'error', 'Error');
+        if (!filaError) return false;
         filaError.querySelectorAll(
             '.dato-factura-masiva, .texto-fila-masiva'
         ).forEach(celda => {
             celda.textContent = '—';
         });
         filaError.querySelector('.json-fila-masiva').textContent = '—';
-        const detalle = document.createElement('span');
-        detalle.className = 'detalle-error-masivo';
-        detalle.textContent = error.message || 'No se pudo conectar al servidor.';
-        filaError.querySelector('.estado-fila-masiva').append(detalle);
         return false;
     } finally {
         actualizarContador(indice + 1, total);
@@ -808,6 +924,10 @@ btnProcesarMasivo.addEventListener('click', async () => {
     intervaloTemporizador = window.setInterval(actualizarTemporizador, 10);
 
     for (let indice = 0; indice < total; indice += 1) {
+        if (indice > 0 && indice % filasPorPaginaMasiva === 0) {
+            paginaArchivosActual = Math.floor(indice / filasPorPaginaMasiva);
+            renderizarPaginaArchivos();
+        }
         mostrarEstadoSeleccionCarpeta('subiendo', 'Cargando');
         if (await procesarArchivo(archivosSeleccionados[indice], indice, total)) {
             exitosos += 1;

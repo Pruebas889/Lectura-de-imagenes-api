@@ -5,7 +5,10 @@ if DB_ENGINE == "mysql":
         crear_tabla,
         guardar_factura,
         obtener_todas,
+        obtener_resumenes,
+        obtener_por_ids,
         obtener_por_id,
+        contar_facturas,
         borrar_todas
     )
 elif DB_ENGINE == "sqlite":
@@ -13,7 +16,10 @@ elif DB_ENGINE == "sqlite":
         crear_tabla,
         guardar_factura,
         obtener_todas,
+        obtener_resumenes,
+        obtener_por_ids,
         obtener_por_id,
+        contar_facturas,
         borrar_todas
     )
 else:

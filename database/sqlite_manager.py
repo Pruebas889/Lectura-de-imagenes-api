@@ -46,6 +46,10 @@ def crear_tabla():
                 fecha_procesado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_facturas_fecha_id
+            ON facturas (fecha_procesado, id)
+        """)
         columnas = {
             fila[1]
             for fila in conn.execute("PRAGMA table_info(facturas)").fetchall()
@@ -130,6 +134,53 @@ def obtener_todas():
         cursor.execute("SELECT * FROM facturas ORDER BY fecha_procesado DESC")
         return cursor.fetchall() #trae todos los resultados
     
+
+def obtener_resumenes(limit=None, offset=0):
+    """Devuelve campos de listado, sin cargar los textos OCR."""
+    columnas = (
+        "id, nombre_archivo, tipo_pdf, banco, total, fecha, "
+        "proveedor, fecha_procesado"
+    )
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
+        conn.row_factory = sqlite3.Row
+        consulta = (
+            f"SELECT {columnas} FROM facturas "
+            "ORDER BY fecha_procesado DESC, id DESC"
+        )
+        parametros = ()
+        if limit is not None:
+            consulta += " LIMIT ? OFFSET ?"
+            parametros = (limit, offset)
+        cursor = conn.execute(consulta, parametros)
+        return cursor.fetchall()
+
+
+def contar_facturas():
+    """Devuelve el número de facturas guardadas."""
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
+        cursor = conn.execute("SELECT COUNT(*) FROM facturas")
+        return cursor.fetchone()[0]
+
+
+def obtener_por_ids(factura_ids):
+    """Obtiene varias facturas en bloques para no exceder límites de SQLite."""
+    filas_por_id = {}
+    with closing(sqlite3.connect(DB_PATH, timeout=30)) as conn:
+        conn.row_factory = sqlite3.Row
+        for inicio in range(0, len(factura_ids), 500):
+            lote = factura_ids[inicio:inicio + 500]
+            marcadores = ", ".join("?" for _ in lote)
+            filas = conn.execute(
+                f"SELECT * FROM facturas WHERE id IN ({marcadores})",
+                lote
+            ).fetchall()
+            filas_por_id.update((fila["id"], fila) for fila in filas)
+    return [
+        filas_por_id[factura_id]
+        for factura_id in factura_ids
+        if factura_id in filas_por_id
+    ]
+
 
 def obtener_por_id(factura_id):
     """

@@ -9,7 +9,14 @@ from io import BytesIO
 from pdf2image import convert_from_bytes, convert_from_path
 from PIL import Image
 from werkzeug.utils import secure_filename
-from database.db_manager import obtener_todas, obtener_por_id, borrar_todas
+from database.db_manager import (
+    obtener_todas,
+    obtener_resumenes,
+    obtener_por_ids,
+    obtener_por_id,
+    contar_facturas,
+    borrar_todas
+)
 from config.settings import (
     DOCUMENT_FOLDER,
     PDF_FOLDER,
@@ -384,12 +391,38 @@ def _detalle_documento_api(factura):
 
 
 def api_v1_listar_documentos():
-    """Lista documentos con un resumen sin el texto OCR completo."""
-    documentos = [_resumen_documento_api(f) for f in obtener_todas()]
-    return jsonify({
-        "total": len(documentos),
-        "documentos": documentos
-    })
+    """Lista documentos resumidos; pagina bajo demanda sin cargar OCR."""
+    pagina_param = request.args.get("pagina")
+    por_pagina_param = request.args.get("por_pagina")
+    pagina = None
+    por_pagina = None
+    if pagina_param is not None or por_pagina_param is not None:
+        try:
+            pagina = int(pagina_param or "1")
+            por_pagina = int(por_pagina_param or "100")
+        except ValueError:
+            return jsonify({
+                "error": "'pagina' y 'por_pagina' deben ser números enteros."
+            }), 400
+        if pagina < 1 or por_pagina < 1 or por_pagina > 500:
+            return jsonify({
+                "error": "'pagina' debe ser mayor que 0 y 'por_pagina' debe estar entre 1 y 500."
+            }), 400
+
+    total = contar_facturas()
+    offset = (pagina - 1) * por_pagina if pagina is not None else 0
+    filas = obtener_resumenes(limit=por_pagina, offset=offset)
+    respuesta = {
+        "total": total,
+        "documentos": [_resumen_documento_api(f) for f in filas]
+    }
+    if pagina is not None:
+        respuesta["paginacion"] = {
+            "pagina": pagina,
+            "por_pagina": por_pagina,
+            "total_paginas": (total + por_pagina - 1) // por_pagina
+        }
+    return jsonify(respuesta)
 
 
 def api_v1_detalle_documento(documento_id):
@@ -468,50 +501,75 @@ def _descargar_json_lote(serializador):
     ):
         return jsonify({"error": "La lista de facturas contiene identificadores no válidos."}), 400
 
-    facturas = []
     ids_vistos = set()
+    ids_unicos = []
     for factura_id in factura_ids:
         if factura_id in ids_vistos:
             continue
         ids_vistos.add(factura_id)
-        factura = obtener_por_id(factura_id)
-        if not factura:
-            return jsonify({"error": f"No se encontró la factura {factura_id}."}), 404
-        facturas.append(factura)
+        ids_unicos.append(factura_id)
 
-    contenido = BytesIO()
+    contenido = tempfile.TemporaryFile()
     nombres_usados = set()
-    with zipfile.ZipFile(contenido, mode="w", compression=zipfile.ZIP_DEFLATED) as archivo_zip:
-        for factura in facturas:
-            factura_id = factura["id"]
-            base_nombre = secure_filename(
-                os.path.splitext(factura["nombre_archivo"])[0]
-            ) or f"factura-{factura_id}"
-            nombre_json = f"{base_nombre}.json"
-            if nombre_json.casefold() in nombres_usados:
-                nombre_json = f"{base_nombre}-{factura_id}.json"
-                consecutivo = 2
-                while nombre_json.casefold() in nombres_usados:
-                    nombre_json = f"{base_nombre}-{factura_id}-{consecutivo}.json"
-                    consecutivo += 1
-            nombres_usados.add(nombre_json.casefold())
-            ruta_json = f"Facturas JSON/{nombre_json}"
-            archivo_zip.writestr(
-                ruta_json,
-                json.dumps(
-                    serializador(factura),
-                    ensure_ascii=False,
-                    indent=2
-                )
-            )
+    try:
+        factura_faltante = None
+        with zipfile.ZipFile(
+            contenido,
+            mode="w",
+            compression=zipfile.ZIP_DEFLATED
+        ) as archivo_zip:
+            for inicio in range(0, len(ids_unicos), 500):
+                lote_ids = ids_unicos[inicio:inicio + 500]
+                facturas = {
+                    factura["id"]: factura
+                    for factura in obtener_por_ids(lote_ids)
+                }
+                for factura_id in lote_ids:
+                    factura = facturas.get(factura_id)
+                    if not factura:
+                        factura_faltante = factura_id
+                        break
 
-    contenido.seek(0)
-    return send_file(
-        contenido,
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name="Facturas JSON.zip"
-    )
+                    base_nombre = secure_filename(
+                        os.path.splitext(factura["nombre_archivo"])[0]
+                    ) or f"factura-{factura_id}"
+                    nombre_json = f"{base_nombre}.json"
+                    if nombre_json.casefold() in nombres_usados:
+                        nombre_json = f"{base_nombre}-{factura_id}.json"
+                        consecutivo = 2
+                        while nombre_json.casefold() in nombres_usados:
+                            nombre_json = (
+                                f"{base_nombre}-{factura_id}-{consecutivo}.json"
+                            )
+                            consecutivo += 1
+                    nombres_usados.add(nombre_json.casefold())
+                    ruta_json = f"Facturas JSON/{nombre_json}"
+                    archivo_zip.writestr(
+                        ruta_json,
+                        json.dumps(
+                            serializador(factura),
+                            ensure_ascii=False,
+                            indent=2
+                        )
+                    )
+                if factura_faltante is not None:
+                    break
+
+        if factura_faltante is not None:
+            contenido.close()
+            return jsonify({
+                "error": f"No se encontró la factura {factura_faltante}."
+            }), 404
+        contenido.seek(0)
+        return send_file(
+            contenido,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="Facturas JSON.zip"
+        )
+    except Exception:
+        contenido.close()
+        raise
 
 
 def api_descargar_json_lote():

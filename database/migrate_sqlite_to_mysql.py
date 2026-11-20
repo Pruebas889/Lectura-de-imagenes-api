@@ -40,6 +40,9 @@ INSERTAR_FACTURA = """
 
 def migrar(ruta_sqlite=DB_PATH, tamano_lote=500):
     """Migra todas las filas, preservando IDs, fechas y contenido OCR."""
+    if tamano_lote < 1:
+        raise ValueError("El tamaño del lote debe ser mayor que cero.")
+
     archivo_sqlite = Path(ruta_sqlite).resolve()
     if not archivo_sqlite.is_file():
         raise FileNotFoundError(f"No existe la base SQLite: {archivo_sqlite}")
@@ -67,6 +70,9 @@ def migrar(ruta_sqlite=DB_PATH, tamano_lote=500):
                 "o sobrescribir datos."
             )
 
+        total_origen = origen.execute(
+            "SELECT COUNT(*) FROM facturas"
+        ).fetchone()[0]
         destino = mysql_manager.obtener_conexion()
         cursor_destino = None
         try:
@@ -83,6 +89,18 @@ def migrar(ruta_sqlite=DB_PATH, tamano_lote=500):
                 )
                 migradas += len(lote)
 
+            if migradas != total_origen:
+                raise RuntimeError(
+                    f"Migración incompleta: se leyeron {migradas} de "
+                    f"{total_origen} facturas de SQLite."
+                )
+            cursor_destino.execute("SELECT COUNT(*) FROM facturas")
+            total_destino = cursor_destino.fetchone()[0]
+            if total_destino != total_origen:
+                raise RuntimeError(
+                    f"Verificación fallida: SQLite tiene {total_origen} "
+                    f"facturas y MySQL tiene {total_destino}."
+                )
             destino.commit()
             return migradas
         except Exception:

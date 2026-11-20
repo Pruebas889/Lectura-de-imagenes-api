@@ -69,6 +69,16 @@ def crear_tabla():
             if not cursor.fetchone():
                 cursor.execute(f"ALTER TABLE facturas ADD COLUMN {columna} {tipo}")
 
+        cursor.execute(
+            "SHOW INDEX FROM facturas WHERE Key_name = %s",
+            ("idx_facturas_fecha_id",)
+        )
+        if not cursor.fetchone():
+            cursor.execute("""
+                CREATE INDEX idx_facturas_fecha_id
+                ON facturas (fecha_procesado, id)
+            """)
+
         conn.commit()
         print("Tabla 'facturas' lista.")
     finally:
@@ -173,6 +183,56 @@ def obtener_todas():
 
         cursor.close()
         conn.close()
+
+
+def obtener_resumenes(limit=None, offset=0):
+    """Devuelve campos de listado, sin cargar los textos OCR."""
+    conn = obtener_conexion()
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        consulta = """
+            SELECT id, nombre_archivo, tipo_pdf, banco, total, fecha,
+                   proveedor, fecha_procesado
+            FROM facturas
+            ORDER BY fecha_procesado DESC, id DESC
+        """
+        parametros = ()
+        if limit is not None:
+            consulta += " LIMIT %s OFFSET %s"
+            parametros = (limit, offset)
+        cursor.execute(consulta, parametros)
+        return cursor.fetchall()
+    finally:
+        if cursor is not None:
+            cursor.close()
+        conn.close()
+
+
+def obtener_por_ids(factura_ids):
+    """Obtiene varias facturas en bloques acotados."""
+    filas_por_id = {}
+    for inicio in range(0, len(factura_ids), 500):
+        lote = factura_ids[inicio:inicio + 500]
+        marcadores = ", ".join("%s" for _ in lote)
+        conn = obtener_conexion()
+        cursor = None
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(
+                f"SELECT * FROM facturas WHERE id IN ({marcadores})",
+                lote
+            )
+            filas_por_id.update((fila["id"], fila) for fila in cursor.fetchall())
+        finally:
+            if cursor is not None:
+                cursor.close()
+            conn.close()
+    return [
+        filas_por_id[factura_id]
+        for factura_id in factura_ids
+        if factura_id in filas_por_id
+    ]
 
 
 def obtener_por_id(factura_id):

@@ -61,12 +61,12 @@ Por defecto, la aplicación crea la tabla de SQLite al iniciar. La base de datos
 
 ## Migrar SQLite a MySQL/MariaDB
 
-1. Crea una base de datos y un usuario en el servidor MySQL/MariaDB. El usuario necesita permisos para crear y modificar tablas, y leer e insertar datos.
-2. Instala las dependencias actualizadas y configura la conexión en la sesión de PowerShell. No guardes contraseñas en el repositorio:
+1. Detén la aplicación y respalda `database/facturas.db` y la carpeta `documentos`. Conserva la carpeta original en el mismo servidor; el migrador no copia ni elimina archivos.
+2. Crea una base de datos vacía y un usuario en el servidor MySQL/MariaDB. El usuario necesita permisos para crear y modificar tablas, leer, insertar e indexar datos.
+3. En la raíz del proyecto, instala las dependencias si es necesario y configura la conexión en la sesión de PowerShell. No guardes contraseñas en el repositorio:
 
 ```powershell
 python -m pip install -r requirements.txt
-$env:DB_ENGINE = "mysql"
 $env:MYSQL_HOST = "127.0.0.1"
 $env:MYSQL_PORT = "3306"
 $env:MYSQL_DATABASE = "lectura_ocr"
@@ -74,24 +74,32 @@ $env:MYSQL_USER = "tu_usuario"
 $env:MYSQL_PASSWORD = "tu_contraseña"
 ```
 
-3. Ejecuta el migrador desde la raíz del proyecto:
+4. Ejecuta el migrador con la misma configuración `MYSQL_*`:
 
 ```powershell
 python -m database.migrate_sqlite_to_mysql
 ```
 
-También puedes indicar otra ubicación para la base SQLite con `--source "C:\ruta\facturas.db"`. El migrador conserva los IDs, fechas, campos extraídos y texto OCR; crea o completa el esquema MySQL y no modifica la base SQLite. Para evitar duplicados o sobrescrituras, se detiene si la tabla MySQL ya tiene registros.
+También puedes indicar otra ubicación para la base SQLite con `--source "C:\ruta\facturas.db"`. El migrador crea o completa la tabla e índice, copia en lotes de 500 y verifica el total. Preserva IDs, fechas, campos y OCR, no modifica SQLite, y se detiene si MySQL ya tiene registros.
 
-4. Inicia la aplicación con `DB_ENGINE=mysql` y las mismas variables de conexión. Desde ese momento, las nuevas facturas se guardarán en MySQL/MariaDB.
+5. Si el total migrado coincide con el histórico, inicia la aplicación con `DB_ENGINE=mysql` y las mismas variables `MYSQL_*`. Desde ese momento, las nuevas facturas se guardarán en MySQL/MariaDB:
 
-La migración copia los registros de la base de datos, no los archivos originales. Si quieres que la aplicación siga mostrando los documentos ya cargados, conserva o copia también la carpeta `documentos` al servidor donde se ejecute.
+```powershell
+$env:DB_ENGINE = "mysql"
+$env:APP_HOST = "0.0.0.0"
+$env:PORT = "5012"
+python app.py
+```
+
+`DOCUMENT_FOLDER` permite apuntar a una ruta de almacenamiento dedicada; si la cambias, copia allí los originales existentes y configura esa misma ruta en cada reinicio de la aplicación. Tras la migración, prueba algunos documentos antes de volver a habilitar el servicio.
 
 ## Uso desde la interfaz
 
 La página principal permite elegir entre dos modos:
 
 - **Cargue individual** (`/individual`): conserva la interfaz para cargar y consultar facturas. El detalle muestra la tabla de datos y dos paneles junto al texto OCR: el JSON estructurado y el texto detectado. Las imágenes se previsualizan en el navegador y el visor del documento original se carga bajo demanda.
-- **Cargue masivo** (`/cargue-masivo`): acepta cualquier cantidad de PDF e imágenes compatibles, seleccionando una carpeta completa o arrastrándola. Recorre subcarpetas, omite otros tipos de archivo y procesa los documentos compatibles de uno en uno. El conteo aparece en la zona de carga y cada resultado se agrega a la tabla al terminar. El nombre abre el documento original en otra pestaña y cada factura leída tiene un enlace para descargar su JSON.
+- **Cargue masivo** (`/cargue-masivo`): acepta PDF e imágenes compatibles de una carpeta o arrastrados, recorre subcarpetas y procesa los documentos de uno en uno. Para no crear una tabla enorme en el navegador, muestra hasta 100 filas por página y avanza la vista mientras procesa lotes grandes. El procesamiento continúa secuencialmente; no requiere cargar los contenidos de todos los archivos a la vez.
+- **Historial** (`/historial`): consulta 50 documentos por página, sin recuperar el OCR completo. El botón JSON descarga el contenido de la página visible.
 
 Los archivos subidos desde ambas interfaces se guardan en `documentos` (carpeta excluida de Git). La pantalla masiva envía cada documento por separado al endpoint de procesamiento individual, lo que permite actualizar el progreso y mostrar resultados durante el lote. El endpoint de API por lotes descrito abajo también está disponible para clientes externos.
 
@@ -109,7 +117,7 @@ La base local es `http://127.0.0.1:5000` por defecto. Si iniciaste la aplicació
 | `GET` | `/api/facturas/<id>/original` | Abre el documento original guardado para esa factura. |
 | `GET` | `/api/facturas/<id>/miniatura` | Devuelve la miniatura del documento original. |
 | `GET` | `/api/facturas/<id>/previsualizar` | Devuelve todas las páginas como imágenes para el visor. |
-| `GET` | `/api/v1/documentos` | Lista documentos con metadatos resumidos, sin incluir el texto OCR. |
+| `GET` | `/api/v1/documentos` | Lista documentos con metadatos resumidos, sin incluir el texto OCR. Acepta paginación opcional. |
 | `GET` | `/api/v1/documentos/<id>` | Devuelve los datos normalizados y el texto OCR completo de un documento. |
 | `GET` | `/api/v1/documentos/<id>/json` | Descarga el mismo detalle v1 como archivo JSON. |
 | `POST` | `/api/v1/documentos/json/descargar-lote` | Descarga los detalles v1 de varias facturas dentro de un ZIP. |
@@ -119,7 +127,21 @@ La base local es `http://127.0.0.1:5000` por defecto. Si iniciaste la aplicació
 
 ### Formato JSON de documentos v1
 
-`GET /api/v1/documentos` devuelve una lista liviana con el enlace al archivo original. La fecha de procesamiento se normaliza a ISO 8601:
+`GET /api/v1/documentos` devuelve una lista resumida con el enlace al archivo original. La fecha de procesamiento se normaliza a ISO 8601. Sin parámetros conserva la respuesta completa por compatibilidad. Para consultar por páginas usa, por ejemplo, `GET /api/v1/documentos?pagina=1&por_pagina=100`; `por_pagina` admite de 1 a 500 y el resultado agrega metadatos `paginacion`:
+
+```json
+{
+  "total": 1234,
+  "paginacion": {
+    "pagina": 1,
+    "por_pagina": 100,
+    "total_paginas": 13
+  },
+  "documentos": []
+}
+```
+
+La consulta resumida selecciona solo las columnas necesarias y no carga el texto OCR completo. El historial web se pagina de 50 en 50 y el cargue masivo presenta 100 filas por página. Se crea un índice por fecha de procesamiento e ID para ordenar y recorrer listas de gran tamaño. Para lotes grandes de exportación, los IDs se consultan en bloques de 500 y el ZIP se escribe en un archivo temporal en vez de acumularlo completo en memoria. La ruta heredada `GET /api/facturas` mantiene su formato y devuelve los registros completos; para listados grandes, prefiere la API v1.
 
 ```json
 {
